@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mol* VR Trajectory Viewer — Dr. Ahmed Sayed</title>
+  <!-- Mol* viewer -->
+  <link rel="stylesheet" href="https://unpkg.com/molstar@latest/build/viewer/molstar.css" />
+  <script src="https://unpkg.com/molstar@latest/build/viewer/molstar.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
+    #app { position: absolute; inset: 0; }
+    .toolbar { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; z-index: 10; background: rgba(20,20,28,0.72); padding: 8px; border-radius: 12px; backdrop-filter: blur(4px); }
+    .toolbar * { color: #e6e7ea; font-size: 13px; }
+    .toolbar input, .toolbar select, .toolbar button { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 6px 10px; }
+    .toolbar button { cursor: pointer; }
+    .spacer { flex: 1; }
+    .dropzone { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border: 2px dashed rgba(255,255,255,0.35); color: #fff; border-radius: 16px; padding: 18px 22px; pointer-events: none; opacity: 0; transition: opacity .2s ease; font-weight: 600; background: rgba(0,0,0,0.35); }
+    .dropzone.show { opacity: 1; }
+    .help { position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 10; background: rgba(20,20,28,0.72); color: #e6e7ea; padding: 8px 12px; border-radius: 12px; line-height: 1.35; }
+    .help kbd { background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.18); }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- Toolbar -->
+  <div class="toolbar" id="toolbar">
+    <strong>Mol* VR Trajectory Viewer — Dr. Ahmed Sayed</strong>
+
+    <button id="btn-open-file" title="Open local multi-model PDB/mmCIF (drag & drop also works)">Open File…</button>
+    <input type="file" id="file-input" accept=".pdb,.cif,.mmcif,.bcif,.mmtf,.ent,.gro,.mol,.sdf,.xyz" style="display:none" />
+
+    <label>Load URL:
+      <input type="url" id="url-input" size="34" placeholder="https://…/trajectory.pdb">
+    </label>
+    <button id="btn-load-url">Load</button>
+
+    <label>PDB ID:
+      <input id="pdb-id" size="6" maxlength="8" placeholder="6LU7" />
+    </label>
+    <button id="btn-load-pdb">Fetch</button>
+
+    <span class="spacer"></span>
+
+    <label>Representation
+      <select id="repr">
+        <option value="auto" selected>Auto</option>
+        <option value="cartoon">Cartoon</option>
+        <option value="ball-and-stick">Ball & Stick</option>
+        <option value="gaussian-surface">Surface</option>
+        <option value="line">Lines</option>
+        <option value="spacefill">Spacefill</option>
+      </select>
+    </label>
+
+    <label>Color
+      <select id="color">
+        <option value="chain-id" selected>Chain</option>
+        <option value="entity-id">Entity</option>
+        <option value="element-symbol">Element</option>
+        <option value="residue-name">Residue</option>
+        <option value="hydrophobicity">Hydrophobicity</option>
+        <option value="uniform">Uniform</option>
+      </select>
+    </label>
+
+    <label>Quality
+      <select id="quality">
+        <option value="auto" selected>Auto</option>
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+      </select>
+    </label>
+
+    <button id="btn-focus-ligand" title="Focus nearest ligand pocket">Focus Ligand</button>
+    <button id="btn-screenshot" title="Save PNG screenshot">Snapshot</button>
+  </div>
+
+  <div class="dropzone" id="dropzone">Drop a multi-model PDB/mmCIF here to play as a trajectory</div>
+
+  <div class="help">
+    <strong>How to get smooth playback</strong> — Load a <em>multi-model</em> file (e.g., a PDB containing many MODEL/ENDMDL frames). Use the bottom timeline to <em>Play</em> and toggle <em>Interpolate</em> for smoothing. For longer movies, thin frames during export (e.g., every 50–200 ps) for fast web playback.
+    <br/>
+    Tips: <kbd>Shift</kbd> + drag = zoom, <kbd>Right-click</kbd> = rotate, <kbd>Scroll</kbd> = zoom. If your browser/headset supports WebXR, a VR icon appears below — click it for immersive viewing.
+  </div>
+
+  <script>
+    // Initialize Mol* Viewer
+    const viewer = new molstar.Viewer('app', {
+      layoutIsExpanded: true,
+      layoutShowControls: true,          // shows the left UI + bottom timeline (with Interpolate toggle)
+      layoutShowRemoteState: false,
+      layoutShowSequence: true,
+      layoutShowLog: false,
+      viewportShowExpand: true,
+      viewportShowSelectionMode: true,
+      viewportShowAnimation: true,
+      pluginStateServer: 'https://webchem.ncbr.muni.cz/molstar-state',
+      volumeStreamingServer: 'https://ds.litemol.org'
+    });
+
+    const ui = {
+      openFileBtn: document.getElementById('btn-open-file'),
+      fileInput: document.getElementById('file-input'),
+      urlInput: document.getElementById('url-input'),
+      loadUrlBtn: document.getElementById('btn-load-url'),
+      pdbId: document.getElementById('pdb-id'),
+      loadPdbBtn: document.getElementById('btn-load-pdb'),
+      repr: document.getElementById('repr'),
+      color: document.getElementById('color'),
+      quality: document.getElementById('quality'),
+      focusLigand: document.getElementById('btn-focus-ligand'),
+      screenshot: document.getElementById('btn-screenshot'),
+      dropzone: document.getElementById('dropzone')
+    };
+
+    // Helpers
+    function getFormatFromUrl(u){
+      const ext = (u.split('?')[0].split('#')[0].split('.').pop() || '').toLowerCase();
+      if (['cif','mmcif','bcif'].includes(ext)) return 'mmcif';
+      if (['pdb','ent'].includes(ext)) return 'pdb';
+      if (['mmtf'].includes(ext)) return 'mmtf';
+      if (['sdf','mol'].includes(ext)) return 'sdf';
+      if (['gro'].includes(ext)) return 'gro';
+      if (['xyz'].includes(ext)) return 'xyz';
+      return 'mmcif';
+    }
+
+    async function loadFromUrl(url){
+      await viewer.clear();
+      await viewer.loadStructureFromUrl(url, getFormatFromUrl(url), {
+        representationParams: { theme: { globalName: ui.color.value }, quality: ui.quality.value }
+      });
+      await applyRepresentation();
+      fitCamera();
+    }
+
+    async function loadFromPdbId(id){
+      await viewer.clear();
+      // RCSB provider will fetch the preferred mmCIF for this ID
+      await viewer.loadPdbId(id, { representationParams: { theme: { globalName: ui.color.value }, quality: ui.quality.value } });
+      await applyRepresentation();
+      fitCamera();
+    }
+
+    async function loadFromFile(file){
+      await viewer.clear();
+      const data = await file.text();
+      const name = file.name.toLowerCase();
+      let format = 'mmcif';
+      if (name.endsWith('.pdb') || name.endsWith('.ent')) format = 'pdb';
+      else if (name.endsWith('.cif') || name.endsWith('.mmcif') || name.endsWith('.bcif')) format = 'mmcif';
+      else if (name.endsWith('.mmtf')) format = 'mmtf';
+      else if (name.endsWith('.sdf') || name.endsWith('.mol')) format = 'sdf';
+      else if (name.endsWith('.gro')) format = 'gro';
+      else if (name.endsWith('.xyz')) format = 'xyz';
+
+      await viewer.loadStructureFromData(data, format, { representationParams: { theme: { globalName: ui.color.value }, quality: ui.quality.value } });
+      await applyRepresentation();
+      fitCamera();
+    }
+
+    async function applyRepresentation(){
+      const r = ui.repr.value;
+      await viewer.setStructureRepresentation(r === 'auto' ? 'auto' : r, {
+        theme: { globalName: ui.color.value },
+        quality: ui.quality.value
+      });
+    }
+
+    function fitCamera(){ viewer.plugin.managers.camera.focusLoci(); }
+
+    // Focus nearest ligand by a simple heuristic: find a small non-polymer component and focus.
+    async function focusLigand(){
+      const s = viewer.plugin.managers.structure.hierarchy.current.structures[0];
+      if (!s) return;
+      const sel = viewer.plugin.managers.structure.selection;
+      const query = molstar.StructureSelectionQuery.registry.nonPolymer; // small molecules
+      const loci = query.getSelection(viewer.plugin.state.data, s.cell.obj.data);
+      if (loci && !molstar.StructureSelection.isEmpty(loci)) {
+        sel.fromSelection(loci);
+        viewer.plugin.managers.camera.focusLoci();
+      }
+    }
+
+    // Toolbar wiring
+    ui.openFileBtn.addEventListener('click', () => ui.fileInput.click());
+    ui.fileInput.addEventListener('change', e => {
+      const f = e.target.files?.[0]; if (f) loadFromFile(f);
+      ui.fileInput.value = '';
+    });
+
+    ui.loadUrlBtn.addEventListener('click', () => {
+      const u = ui.urlInput.value.trim(); if (u) loadFromUrl(u);
+    });
+
+    ui.loadPdbBtn.addEventListener('click', () => {
+      const id = ui.pdbId.value.trim(); if (id) loadFromPdbId(id);
+    });
+
+    ui.repr.addEventListener('change', applyRepresentation);
+    ui.color.addEventListener('change', applyRepresentation);
+    ui.quality.addEventListener('change', applyRepresentation);
+    ui.focusLigand.addEventListener('click', focusLigand);
+
+    ui.screenshot.addEventListener('click', async () => {
+      const img = await viewer.plugin.managers.snapshot.captureImage({ transparent: false });
+      const a = document.createElement('a');
+      a.href = img.data;
+      a.download = 'molstar_snapshot.png';
+      a.click();
+    });
+
+    // Drag & drop support
+    window.addEventListener('dragover', e => { e.preventDefault(); ui.dropzone.classList.add('show'); });
+    window.addEventListener('dragleave', () => ui.dropzone.classList.remove('show'));
+    window.addEventListener('drop', e => {
+      e.preventDefault(); ui.dropzone.classList.remove('show');
+      const f = e.dataTransfer?.files?.[0]; if (f) loadFromFile(f);
+    });
+
+    // URL parameters: ?src=… or ?pdb=XXXX
+    const params = new URLSearchParams(location.search);
+    const src = params.get('src');
+    const pdb = params.get('pdb');
+    if (src) { ui.urlInput.value = src; loadFromUrl(src); }
+    else if (pdb) { ui.pdbId.value = pdb; loadFromPdbId(pdb); }
+
+    // Initial scene comfort settings
+    viewer.setBackground({ variant: 'dark' });
+
+    // Note about smoothing: Mol* shows a bottom timeline for multi-model files. Use its "Interpolate" toggle for smooth motion.
+  </script>
+</body>
+</html>
