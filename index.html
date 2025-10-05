@@ -19,7 +19,7 @@
     .col{position:relative}
     #ngl,#molstar{position:absolute;inset:0}
     .ttl{font-weight:700}
-    .note{font-size:12px;opacity:.9}
+    .note{font-size:12px;opacity:.9;line-height:1.35}
     .panel{position:absolute;left:10px;top:10px;z-index:5;background:rgba(0,0,0,.5);padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.15)}
     .log{position:absolute;right:10px;top:10px;z-index:6;width:420px;max-height:48vh;overflow:auto;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);font:12px/1.35 ui-monospace,monospace}
     .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -86,31 +86,44 @@
   // --- NGL VIEWER (left) ---
   const stage = new NGL.Stage('ngl', {backgroundColor:'#0b1021'});
   window.addEventListener('resize', ()=>{stage.handleResize();});
-  let nglComp = null; // component
-  let nglTraj = null; // trajectory if available
+  let nglComp = null;      // structure component
+  let nglTraj = null;      // NGL trajectory object (if any)
+  let nFrames = 0;         // total frames
+  let curFrame = 0;        // current frame index
+  let playing = false;     // manual player state
+  let playTimer = null;    // timer id for manual loop
 
-  // Decide if we should force asTrajectory
   function shouldAsTrajectory(name){
     const ext = (name||'').split('.').pop().toLowerCase();
     return ['pdb','ent','cif','mmcif','mmtf','gro'].includes(ext);
   }
 
+  function detectFrames(){
+    // Prefer NGL Trajectory if available
+    if (nglTraj && Number.isFinite(nglTraj.frameCount)) return nglTraj.frameCount|0;
+    // Fallback heuristics
+    try { if (nglComp && nglComp.maxFrame != null) return (nglComp.maxFrame|0) + 1; } catch(_){ }
+    try { const f = nglComp?.structure?.frames; if (Array.isArray(f)) return f.length|0; } catch(_){ }
+    return 1;
+  }
+
   async function nglLoad(source, opts){
     try{
-      if (nglComp) { stage.removeComponent(nglComp); nglComp = null; nglTraj = null; }
+      // reset
+      if (nglComp) { stage.removeComponent(nglComp); }
+      nglComp = null; nglTraj = null; nFrames = 0; curFrame = 0; stopManual();
+
       const isFile = (source instanceof File) || (source instanceof Blob);
       const name = isFile ? source.name : (typeof source === 'string' ? source : '');
       const primaryOpts = Object.assign({}, opts||{});
-      if (shouldAsTrajectory(name) || typeof source === 'string') primaryOpts.asTrajectory = true; // key fix: treat multi-model as trajectory
+      if (shouldAsTrajectory(name) || typeof source === 'string') primaryOpts.asTrajectory = true;
 
-      L('NGL loading (try asTrajectory):', name || source);
+      L('NGL loading (asTrajectory preferred):', name || source);
       try {
         nglComp = await stage.loadFile(source, primaryOpts);
       } catch(err1){
-        // Fallback: load without asTrajectory for single-model/odd inputs
         L('asTrajectory load failed, retrying without:', err1.message||err1);
-        const fallbackOpts = Object.assign({}, opts||{});
-        delete fallbackOpts.asTrajectory;
+        const fallbackOpts = Object.assign({}, opts||{}); delete fallbackOpts.asTrajectory;
         nglComp = await stage.loadFile(source, fallbackOpts);
       }
 
@@ -118,49 +131,79 @@
       nglComp.addRepresentation('cartoon', {colorScheme:'chainname'});
       nglComp.autoView();
 
-      // Attach trajectory if present
+      // Try to find trajectory
       const list = nglComp.trajectoryList || [];
       nglTraj = list.length ? list[0] : null;
+      nFrames = detectFrames();
+
       const frameSlider = document.getElementById('frame');
       const frameInfo = document.getElementById('frameInfo');
+      frameSlider.max = Math.max(0, nFrames - 1);
+      frameSlider.value = 0; frameInfo.textContent = `0 / ${Math.max(0, nFrames-1)}`;
 
-      if (nglTraj) {
-        const n = nglTraj.frameCount|0; frameSlider.max = Math.max(0, n-1); frameSlider.value = 0; frameInfo.textContent = `0 / ${n-1}`;
-        // Apply initial speed & interpolation
-        setNglSpeed();
-        setNglInterpolation();
-        // Hook manual frame control
-        frameSlider.oninput = ()=>{ const f = parseInt(frameSlider.value,10)|0; frameInfo.textContent = `${f} / ${n-1}`; nglTraj.setFrame(f); };
-      } else {
-        frameSlider.max = 0; frameSlider.value = 0; frameInfo.textContent = '0 / 0';
-      }
+      // Apply initial playback params
+      setNglSpeed();
+      setNglInterpolation();
+
+      // Hook manual frame control to both paths
+      frameSlider.oninput = ()=>{
+        const f = parseInt(frameSlider.value,10)|0; curFrame = f; frameInfo.textContent = `${f} / ${Math.max(0, nFrames-1)}`;
+        if (nglTraj && typeof nglTraj.setFrame === 'function') nglTraj.setFrame(f);
+        else if (nglComp && typeof nglComp.setFrame === 'function') nglComp.setFrame(f);
+      };
     }catch(e){ L('NGL load error:', e.message||e); alert('NGL load failed: '+(e.message||e)); }
   }
 
   function setNglInterpolation(){
-    if (!nglTraj) { L('No NGL trajectory for interpolation.'); return; }
+    if (!nFrames) return;
     const mode = document.getElementById('interp').value; // 'none'|'linear'|'spline'
-    // NGL API supports setFrameInterpolated for smooth stepping; set a mode hint if available
-    if (typeof nglTraj.setFrameInterpolation === 'function') {
+    if (nglTraj && typeof nglTraj.setFrameInterpolation === 'function') {
       nglTraj.setFrameInterpolation(mode);
-      L('Interpolation mode:', mode);
+      L('Interpolation mode (trajectory):', mode);
     } else {
-      L('Interpolation API not available in this NGL build; using discrete frames.');
+      L('Interpolation mode (manual):', mode, '- trajectory API not available; using discrete frames.');
     }
   }
 
   function setNglSpeed(){
-    if (!nglTraj || !nglTraj.player) return;
     const t = parseInt(document.getElementById('speed').value,10)/100; // 0..1
-    const ms = 30 + (1-t)*220; // 250..30 ms per frame
-    nglTraj.player.timeout = ms;
+    const ms = Math.round(30 + (1-t)*220); // 250..30 ms per frame
+    if (nglTraj && nglTraj.player) nglTraj.player.timeout = ms;
+    // store for manual fallback
+    document.getElementById('speed').dataset.ms = String(ms);
     L('Playback speed (ms/frame):', ms);
   }
 
+  function stepManual(){
+    if (!playing || !nFrames) return;
+    const ms = parseInt(document.getElementById('speed').dataset.ms||'100',10);
+    curFrame = (curFrame + 1) % nFrames;
+    if (nglTraj && typeof nglTraj.setFrame === 'function') nglTraj.setFrame(curFrame);
+    else if (nglComp && typeof nglComp.setFrame === 'function') nglComp.setFrame(curFrame);
+    const frameSlider = document.getElementById('frame');
+    const frameInfo = document.getElementById('frameInfo');
+    frameSlider.value = curFrame; frameInfo.textContent = `${curFrame} / ${Math.max(0, nFrames-1)}`;
+    playTimer = setTimeout(stepManual, ms);
+  }
+  function play(){
+    if (!nFrames) { L('No frames detected for playback.'); return; }
+    // Prefer native player when available
+    if (nglTraj && nglTraj.player && typeof nglTraj.player.play === 'function') {
+      nglTraj.player.play(); L('Playing via NGL TrajectoryPlayer'); return;
+    }
+    // Fallback manual
+    if (!playing){ playing = true; L('Playing via manual loop'); stepManual(); }
+  }
+  function pause(){
+    if (nglTraj && nglTraj.player && typeof nglTraj.player.pause === 'function') nglTraj.player.pause();
+    stopManual();
+  }
+  function stopManual(){ playing = false; if (playTimer){ clearTimeout(playTimer); playTimer=null; } }
+
   document.getElementById('interp').addEventListener('change', setNglInterpolation);
   document.getElementById('speed').addEventListener('input', setNglSpeed);
-  document.getElementById('btn-play').addEventListener('click', ()=>{ if (nglTraj && nglTraj.player) nglTraj.player.play(); });
-  document.getElementById('btn-pause').addEventListener('click', ()=>{ if (nglTraj && nglTraj.player) nglTraj.player.pause(); });
+  document.getElementById('btn-play').addEventListener('click', play);
+  document.getElementById('btn-pause').addEventListener('click', pause);
 
   let cartoonOn=true; document.getElementById('btn-repr').addEventListener('click', function(){
     if (!nglComp) return; nglComp.removeAllRepresentations();
