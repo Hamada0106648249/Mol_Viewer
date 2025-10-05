@@ -60,10 +60,14 @@
           </label>
           <label class="small">Speed <input type="range" id="speed" min="0" max="100" value="60"></label>
           <label class="small">Frame <input type="range" id="frame" min="0" max="0" value="0"></label>
-          <span id="frameInfo" class="small">0 / 0</span>
-          <button id="btn-play" type="button">Play</button>
-          <button id="btn-pause" type="button">Pause</button>
-          <button id="btn-repr" type="button">Cartoon</button>
+          
+        </div>
+        <div class="row">
+          <b class="small">Movie export</b>
+          <button id="btn-rec-start" type="button">Start Recording</button>
+          <button id="btn-rec-stop" type="button" disabled>Stop & Download</button>
+          <a id="rec-download" class="small" style="display:none;text-decoration:underline;" download="trajectory.webm">Download ready</a>
+        </div>
         </div>
       </div>
     </div>
@@ -136,9 +140,12 @@
       nglTraj = list.length ? list[0] : null;
       nFrames = detectFrames();
 
+      // bind signals if possible
+      bindTrajSignals();
+
       const frameSlider = document.getElementById('frame');
       const frameInfo = document.getElementById('frameInfo');
-      frameSlider.max = Math.max(0, nFrames - 1);
+      frameSlider.max =;
       frameSlider.value = 0; frameInfo.textContent = `0 / ${Math.max(0, nFrames-1)}`;
 
       // Apply initial playback params
@@ -147,11 +154,7 @@
 
       // Hook manual frame control to both paths
       frameSlider.oninput = ()=>{
-        const f = parseInt(frameSlider.value,10)|0; curFrame = f; frameInfo.textContent = `${f} / ${Math.max(0, nFrames-1)}`;
-        if (nglTraj && typeof nglTraj.setFrame === 'function') nglTraj.setFrame(f);
-        else if (nglComp && typeof nglComp.setFrame === 'function') nglComp.setFrame(f);
-      };
-    }catch(e){ L('NGL load error:', e.message||e); alert('NGL load failed: '+(e.message||e)); }
+        const f = parseInt(frameSlider.value,10)|0; curFrame = f; frameInfo.textContent = `${f}oad error:', e.message||e); alert('NGL load failed: '+(e.message||e)); }
   }
 
   function setNglInterpolation(){
@@ -180,22 +183,9 @@
     curFrame = (curFrame + 1) % nFrames;
     if (nglTraj && typeof nglTraj.setFrame === 'function') nglTraj.setFrame(curFrame);
     else if (nglComp && typeof nglComp.setFrame === 'function') nglComp.setFrame(curFrame);
+    try { nglComp.updateRepresentations({ what: { position: true } }); } catch(_){ }
     const frameSlider = document.getElementById('frame');
-    const frameInfo = document.getElementById('frameInfo');
-    frameSlider.value = curFrame; frameInfo.textContent = `${curFrame} / ${Math.max(0, nFrames-1)}`;
-    playTimer = setTimeout(stepManual, ms);
-  }
-  function play(){
-    if (!nFrames) { L('No frames detected for playback.'); return; }
-    // Prefer native player when available
-    if (nglTraj && nglTraj.player && typeof nglTraj.player.play === 'function') {
-      nglTraj.player.play(); L('Playing via NGL TrajectoryPlayer'); return;
-    }
-    // Fallback manual
-    if (!playing){ playing = true; L('Playing via manual loop'); stepManual(); }
-  }
-  function pause(){
-    if (nglTraj && nglTraj.player && typeof nglTraj.player.pause === 'function') nglTraj.player.pause();
+    const frameInfo = document.getElementById('frameTraj.player.pause === 'function') nglTraj.player.pause();
     stopManual();
   }
   function stopManual(){ playing = false; if (playTimer){ clearTimeout(playTimer); playTimer=null; } }
@@ -205,11 +195,46 @@
   document.getElementById('btn-play').addEventListener('click', play);
   document.getElementById('btn-pause').addEventListener('click', pause);
 
+  // If the trajectory exposes a frameChanged signal, force a rep update when it fires
+  function bindTrajSignals(){
+    if (!nglTraj || !nglTraj.signals || !nglTraj.signals.frameChanged) return;
+    try { nglTraj.signals.frameChanged.add(()=>{ try { nglComp.updateRepresentations({ what: { position: true } }); } catch(_){} }); } catch(_){ }
+  }
+
   let cartoonOn=true; document.getElementById('btn-repr').addEventListener('click', function(){
     if (!nglComp) return; nglComp.removeAllRepresentations();
     if (cartoonOn){ nglComp.addRepresentation('licorice'); this.textContent='Licorice'; }
     else { nglComp.addRepresentation('cartoon',{colorScheme:'chainname'}); this.textContent='Cartoon'; }
     cartoonOn=!cartoonOn;
+  });
+
+  // --- Recording (NGL canvas -> WebM) ---
+  const rec = { mediaRecorder: null, chunks: [] };
+  const btnRecStart = document.getElementById('btn-rec-start');
+  const btnRecStop  = document.getElementById('btn-rec-stop');
+  const linkRec     = document.getElementById('rec-download');
+
+  function getCanvas(){ return stage.viewer.renderer.domElement; }
+
+  btnRecStart.addEventL    const stream = canvas.captureStream(30); // 30 fps capture
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm;codecs=vp8';
+      rec.chunks = [];
+      rec.mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6000000 });
+      rec.mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
+      rec.mediaRecorder.onstop = () => {
+        const blob = new Blob(rec.chunks, { type: rec.mediaRecorder.mimeType || 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        linkRec.href = url; linkRec.style.display = 'inline'; linkRec.textContent = 'Download ready';
+        linkRec.download = 'trajectory.webm';
+        btnRecStop.disabled = true; btnRecStart.disabled = false;
+      };
+      rec.mediaRecorder.start();
+      linkRec.style.display = 'noe; btnRecStop.disabled = false;
+    }catch(e){ alert('Recording failed: '+(e.message||e)); }
+  });
+
+  btnRecStop.addEventListener('click', () => {
+    try{ if (rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive') rec.mediaRecorder.stop(); }catch(_){ }
   });
 
   // --- MOL* VIEWER (right) for VR ---
