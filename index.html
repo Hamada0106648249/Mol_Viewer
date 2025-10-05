@@ -3,177 +3,207 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mol* VR Trajectory Viewer — Dr. Ahmed Sayed (Stable)</title>
-  <!-- Pin a known-good Mol* build; avoid "latest" to prevent breaking changes -->
+  <title>Dual MD Viewer — Smoothing (NGL) + VR (Mol*) — Dr. Ahmed Sayed</title>
+  <!-- NGL (robust uploads + programmatic interpolation smoothing) -->
+  <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
+  <!-- Mol* (for WebXR / VR mode) pinned to a stable version -->
   <link rel="stylesheet" href="https://unpkg.com/molstar@3.49.0/build/viewer/molstar.css" />
   <script src="https://unpkg.com/molstar@3.49.0/build/viewer/molstar.js" defer></script>
   <style>
-    html, body { height: 100%; margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background: #0b1021; }
-    #app { position: absolute; inset: 0; z-index: 1; }
-    .toolbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; z-index: 2147483647; background: rgba(16,18,30,0.88); padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); pointer-events: auto; }
-    .toolbar * { color: #e8ebff; font-size: 13px; }
-    .toolbar input, .toolbar select, .toolbar button, .toolbar label { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 6px 10px; color: #e8ebff; }
-    .toolbar button { cursor: pointer; }
-    .spacer { flex: 1; }
-    .dropzone { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border: 2px dashed rgba(255,255,255,0.35); color: #fff; border-radius: 16px; padding: 18px 22px; pointer-events: none; opacity: 0; transition: opacity .2s ease; font-weight: 600; background: rgba(0,0,0,0.35); z-index: 2147483646; }
-    .dropzone.show { opacity: 1; }
-    .help { position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 2147483646; background: rgba(16,18,30,0.88); color: #e8ebff; padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); line-height: 1.35; pointer-events: auto; }
-    .help kbd { background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.18); }
-    .log { position: absolute; top: 10px; right: 10px; width: 360px; max-height: 50vh; overflow: auto; background: rgba(0,0,0,0.55); color: #d0d4ff; font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); z-index: 2147483646; pointer-events: auto; }
-    .log b{color:#ffd58a}
-    a.link { color: #a2b7ff; text-decoration: none; }
+    :root { --bg:#0b1021; --panel:#12172b; --ink:#e8ebff; }
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial}
+    .grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr;gap:10px;height:100%}
+    .hdr{grid-column:1/3;background:var(--panel);padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .hdr input,.hdr select,.hdr button{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:var(--ink);border-radius:8px;padding:6px 10px}
+    .hdr button{cursor:pointer}
+    .col{position:relative}
+    #ngl,#molstar{position:absolute;inset:0}
+    .ttl{font-weight:700}
+    .note{font-size:12px;opacity:.9}
+    .panel{position:absolute;left:10px;top:10px;z-index:5;background:rgba(0,0,0,.5);padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.15)}
+    .log{position:absolute;right:10px;top:10px;z-index:6;width:380px;max-height:48vh;overflow:auto;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);font:12px/1.35 ui-monospace,monospace}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    label.small{font-size:12px}
   </style>
 </head>
 <body>
-  <div id="app"></div>
+  <div class="grid">
+    <div class="hdr">
+      <span class="ttl">Dual MD Viewer — <b>Smoothing (NGL)</b> + <b>VR (Mol*)</b> — Dr. Ahmed Sayed</span>
 
-  <!-- Toolbar -->
-  <div class="toolbar" id="toolbar">
-    <strong>Mol* VR Trajectory Viewer — Dr. Ahmed Sayed</strong>
+      <button id="btn-open" type="button">Open File…</button>
+      <label for="file" style="text-decoration:underline;cursor:pointer">Choose File</label>
+      <input id="file" type="file" accept=".pdb,.cif,.mmcif,.mmtf,.gro,.xtc,.dcd,.traj,.ent" style="display:none" />
 
-    <button id="btn-open-file" type="button" title="Open local multi-model PDB/mmCIF (drag & drop also works)">Open File…</button>
-    <input type="file" id="file-input" accept=".pdb,.cif,.mmcif,.bcif,.mmtf,.ent" style="display:none" />
-    <label for="file-input" id="file-fallback" style="cursor:pointer;">Choose File</label>
+      <span>|</span>
+      <label>URL <input id="url" type="url" size="36" placeholder="https://…/trajectory.pdb (CORS required)"></label>
+      <button id="btn-load-url" type="button">Load URL</button>
 
-    <label>Load URL:
-      <input type="url" id="url-input" size="34" placeholder="https://…/trajectory.pdb (must allow CORS)">
-    </label>
-    <button id="btn-load-url" type="button">Load</button>
+      <span>|</span>
+      <label>PDB ID <input id="pdb" size="6" placeholder="1CRN"></label>
+      <button id="btn-load-pdb" type="button">Fetch</button>
 
-    <label>PDB ID:
-      <input id="pdb-id" size="6" maxlength="8" placeholder="1CRN" />
-    </label>
-    <button id="btn-load-pdb" type="button">Fetch</button>
+      <span class="note">Tip: NGL panel (left) = smoothing & fast local uploads. Mol* panel (right) = VR WebXR. When loading a URL/PDB ID, both panels sync. For local files, Mol* VR works best when the file is hosted (CORS).</span>
+    </div>
 
-    <button id="btn-test" type="button" title="Quick click test">Click Test</button>
+    <div class="col" id="col-ngl">
+      <div id="ngl"></div>
+      <div class="panel">
+        <div class="row">
+          <b>NGL — Smoothing Controls</b>
+        </div>
+        <div class="row">
+          <label class="small"><input type="checkbox" id="chk-interp"> Interpolate frames</label>
+          <label class="small">Rate <input type="range" id="speed" min="0" max="100" value="50"></label>
+          <button id="btn-play" type="button">Play</button>
+          <button id="btn-pause" type="button">Pause</button>
+          <button id="btn-repr" type="button">Cartoon</button>
+        </div>
+      </div>
+    </div>
 
-    <span class="spacer"></span>
-
-    <label>Quality
-      <select id="quality">
-        <option value="auto" selected>Auto</option>
-        <option value="low">Low</option>
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-      </select>
-    </label>
-
-    <button id="btn-screenshot" title="Save PNG screenshot">Snapshot</button>
+    <div class="col" id="col-molstar">
+      <div id="molstar"></div>
+      <div class="panel"><b>Mol* — VR</b><div class="note">Use the headset icon inside Mol* controls to enter VR (WebXR).
+        For local files, WebXR needs the file to be accessible via HTTPS with CORS: host it in the same GitHub Pages repo and use the URL loader above.</div></div>
+    </div>
   </div>
 
-  <div class="dropzone" id="dropzone">Drop a multi-model PDB/mmCIF here to play as a trajectory</div>
   <div class="log" id="log"></div>
 
-  <div class="help">
-    <strong>Smoothing & VR</strong> — For **smoothing**, load a <em>multi-model</em> file (PDB/mmCIF with many MODEL/ENDMDL frames). Use the bottom timeline: **Play ▶** and toggle **Interpolate**. If your browser/headset supports WebXR, a **VR headset icon** appears in the viewer controls.
-    <br/>Tip: Thin frames on export (every 50–200 ps) to keep files fast in the browser. For URL loading, the server must send <code>Access-Control-Allow-Origin: *</code>.
-  </div>
+<script>
+(function(){
+  const log = document.getElementById('log');
+  const L = (...a)=>{const s=a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' '); log.innerHTML = '<div>'+s+'</div>'+log.innerHTML; console.log(...a);};
 
-  <script>
-  window.addEventListener('DOMContentLoaded', async () => {
-    const log = document.getElementById('log');
-    const L = (...args) => { const line = args.map(x => (typeof x==='string'?x:JSON.stringify(x))).join(' '); log.innerHTML = `<div>${line}</div>` + log.innerHTML; console.log(...args); };
+  // --- NGL VIEWER (left) ---
+  const stage = new NGL.Stage('ngl', {backgroundColor:'#0b1021'});
+  window.addEventListener('resize', ()=>{stage.handleResize();});
+  let nglComp = null; // current component (structure) for NGL
+  let nglTraj = null; // current trajectory (if present)
 
-    if (!window.molstar || !molstar.Viewer) {
-      L('<b>Mol*</b> failed to load. Check your network or CDN access.');
-      return;
-    }
+  async function nglLoad(source, opts){
+    try{
+      if (nglComp) { stage.removeComponent(nglComp); nglComp = null; nglTraj = null; }
+      L('NGL loading:', source);
+      nglComp = await stage.loadFile(source, opts||{}); // auto-detects format, supports local File/Blob/URL/PDB scheme
+      // Default style
+      nglComp.addRepresentation('cartoon', {colorScheme:'chainname'});
+      nglComp.autoView();
+      // Try to get trajectory if available
+      const trajList = nglComp.trajectoryList || [];
+      nglTraj = trajList.length ? trajList[0] : null;
+      if (nglTraj) L('NGL trajectory frames:', nglTraj.frameCount);
+    }catch(e){ L('NGL load error:', e.message||e); alert('NGL load failed: '+(e.message||e)); }
+  }
 
-    let viewer;
-    try {
-      viewer = new molstar.Viewer('app', {
-        layoutIsExpanded: true,
-        layoutShowControls: true,          // left UI + bottom timeline (with Interpolate toggle)
-        layoutShowSequence: true,
-        layoutShowLog: false,
-        viewportShowExpand: true,
-        viewportShowSelectionMode: true,
-        viewportShowAnimation: true,
-        pluginStateServer: 'https://webchem.ncbr.muni.cz/molstar-state',
-        volumeStreamingServer: 'https://ds.litemol.org'
-      });
-      viewer.setBackground({ variant: 'dark' });
-      L('Mol* initialized.');
-    } catch (e) {
-      L('Failed to initialize Mol* viewer:', e.message || e);
-      return;
-    }
-
-    // --- UI elements ---
-    const ui = {
-      openFileBtn: document.getElementById('btn-open-file'),
-      fileInput: document.getElementById('file-input'),
-      urlInput: document.getElementById('url-input'),
-      loadUrlBtn: document.getElementById('btn-load-url'),
-      pdbId: document.getElementById('pdb-id'),
-      loadPdbBtn: document.getElementById('btn-load-pdb'),
-      quality: document.getElementById('quality'),
-      screenshot: document.getElementById('btn-screenshot'),
-      dropzone: document.getElementById('dropzone')
-    };
-
-    const getFormatFromUrl = (u) => {
-      const ext = (u.split('?')[0].split('#')[0].split('.').pop() || '').toLowerCase();
-      if (['cif','mmcif','bcif'].includes(ext)) return 'mmcif';
-      if (['pdb','ent'].includes(ext)) return 'pdb';
-      if (['mmtf'].includes(ext)) return 'mmtf';
-      return 'mmcif';
-    };
-
-    async function safeLoad(promise, what){
-      try { await promise; L('Loaded:', what); }
-      catch(e){ L('Load failed for', what, '-', e.message || e); alert('Load failed: ' + (e.message || e)); }
-    }
-
-    async function loadFromUrl(url){
-      await safeLoad(viewer.loadStructureFromUrl(url, getFormatFromUrl(url), { representationParams: { quality: ui.quality.value } }), url);
-      viewer.resetCamera();
-    }
-
-    async function loadFromPdbId(id){
-      await safeLoad(viewer.loadPdbId(id, { representationParams: { quality: ui.quality.value } }), 'PDB ' + id);
-      viewer.resetCamera();
-    }
-
-    async function loadFromFile(file){
-      const name = file.name.toLowerCase();
-      let format = 'mmcif';
-      if (name.endsWith('.pdb') || name.endsWith('.ent')) format = 'pdb';
-      else if (name.endsWith('.cif') || name.endsWith('.mmcif') || name.endsWith('.bcif')) format = 'mmcif';
-      else if (name.endsWith('.mmtf')) format = 'mmtf';
-
-      const data = await file.text();
-      await safeLoad(viewer.loadStructureFromData(data, format, { representationParams: { quality: ui.quality.value } }), file.name);
-      viewer.resetCamera();
-    }
-
-    // Toolbar wiring
-    ui.openFileBtn.addEventListener('click', (ev) => { ev.preventDefault(); ui.fileInput.click(); });
-    const fallbackLabel = document.getElementById('file-fallback');
-    fallbackLabel.addEventListener('click', (ev) => { ev.preventDefault(); ui.fileInput.click(); });
-
-    ui.fileInput.addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) loadFromFile(f); e.target.value=''; });
-    ui.loadUrlBtn.addEventListener('click', (ev) => { ev.preventDefault(); const u = ui.urlInput.value.trim(); if (u) loadFromUrl(u); else alert('Enter a URL.'); });
-    ui.loadPdbBtn.addEventListener('click', (ev) => { ev.preventDefault(); const id = ui.pdbId.value.trim(); if (id) loadFromPdbId(id); else alert('Enter a PDB ID.'); });
-
-    // Simple sanity click tester (should log immediately)
-    document.getElementById('btn-test').addEventListener('click', () => { L('Click test: Toolbar is receiving events.'); alert('Toolbar click OK'); });
-
-    // Drag & drop
-    window.addEventListener('dragover', e => { e.preventDefault(); ui.dropzone.classList.add('show'); });
-    window.addEventListener('dragleave', () => ui.dropzone.classList.remove('show'));
-    window.addEventListener('drop', e => { e.preventDefault(); ui.dropzone.classList.remove('show'); const f = e.dataTransfer?.files?.[0]; if (f) loadFromFile(f); });
-
-    // Auto-test: load a small PDB so you immediately see the UI working
-    try { await loadFromPdbId('1crn'); } catch(_){}
-
-    // URL params: ?src=… or ?pdb=XXXX
-    const params = new URLSearchParams(location.search);
-    const src = params.get('src');
-    const pdb = params.get('pdb');
-    if (src) ui.urlInput.value = src, loadFromUrl(src);
-    if (pdb) ui.pdbId.value = pdb, loadFromPdbId(pdb);
+  // Interpolation & playback controls
+  const chkInterp = document.getElementById('chk-interp');
+  chkInterp.addEventListener('change', ()=>{
+    if (!nglTraj) { L('No trajectory detected in NGL. Load a multi-model/trajectory file.'); return; }
+    nglTraj.setFrameInterpolation(chkInterp.checked? 'spline':'none');
+    L('Interpolation:', chkInterp.checked? 'spline':'none');
   });
-  </script>
+
+  const speed = document.getElementById('speed');
+  function nglSetSpeed(){
+    const t = parseInt(speed.value,10)/100; // 0..1
+    const ms = 30 + (1-t)*200; // 230..30ms per frame
+    if (nglTraj){ nglTraj.player && (nglTraj.player.timeout = ms); }
+    L('Playback speed (ms/frame):', ms);
+  }
+  speed.addEventListener('input', nglSetSpeed);
+
+  document.getElementById('btn-play').addEventListener('click', ()=>{
+    if (!nglTraj){ L('No trajectory to play.'); return; }
+    nglTraj.player.play(); L('Play');
+  });
+  document.getElementById('btn-pause').addEventListener('click', ()=>{
+    if (!nglTraj){ return; }
+    nglTraj.player.pause(); L('Pause');
+  });
+  let cartoonOn=true; document.getElementById('btn-repr').addEventListener('click',()=>{
+    if (!nglComp) return; nglComp.removeAllRepresentations();
+    if (cartoonOn){ nglComp.addRepresentation('licorice'); this.textContent='Licorice'; }
+    else { nglComp.addRepresentation('cartoon',{colorScheme:'chainname'}); this.textContent='Cartoon'; }
+    cartoonOn=!cartoonOn;
+  });
+
+  // --- MOL* VIEWER (right) for VR ---
+  let molstarViewer = null;
+  function ensureMolstar(){
+    if (molstarViewer) return molstarViewer;
+    if (!window.molstar || !molstar.Viewer){ L('Mol* not ready.'); return null; }
+    molstarViewer = new molstar.Viewer('molstar', {
+      layoutIsExpanded: true,
+      layoutShowControls: true,
+      layoutShowSequence: true,
+      viewportShowAnimation: true,
+      pluginStateServer: 'https://webchem.ncbr.muni.cz/molstar-state',
+      volumeStreamingServer: 'https://ds.litemol.org'
+    });
+    molstarViewer.setBackground({variant:'dark'});
+    L('Mol* initialized');
+    return molstarViewer;
+  }
+
+  async function molstarLoadPdbId(id){
+    const v = ensureMolstar(); if (!v) return;
+    try{ await v.clear(); await v.loadPdbId(id, { }); v.resetCamera(); L('Mol* loaded PDB', id); }
+    catch(e){ L('Mol* load PDB error:', e.message||e); }
+  }
+  async function molstarLoadUrl(url){
+    const v = ensureMolstar(); if (!v) return;
+    const fmt = (url.split('?')[0].split('#')[0].split('.').pop()||'').toLowerCase();
+    const kind = ['cif','mmcif','bcif'].includes(fmt)?'mmcif': (['pdb','ent'].includes(fmt)?'pdb': (fmt==='mmtf'?'mmtf':'mmcif'));
+    try{ await v.clear(); await v.loadStructureFromUrl(url, kind, {}); v.resetCamera(); L('Mol* loaded URL', url); }
+    catch(e){ L('Mol* load URL error:', e.message||e); alert('Mol* URL load failed (CORS/format?)'); }
+  }
+  async function molstarLoadFile(file){
+    // Mol* can read local data via data URI. We create a Blob URL; some browsers block VR on blob: in XR mode.
+    const v = ensureMolstar(); if (!v) return;
+    const name = file.name.toLowerCase();
+    const kind = name.endsWith('.pdb')||name.endsWith('.ent')?'pdb':(name.endsWith('.mmtf')?'mmtf': 'mmcif');
+    const text = await file.text();
+    try{ await v.clear(); await v.loadStructureFromData(text, kind, {}); v.resetCamera(); L('Mol* loaded local file', file.name); }
+    catch(e){ L('Mol* local load error:', e.message||e); alert('Mol* could not open the local file. For VR, please host the file (GitHub Pages) and use the URL box.'); }
+  }
+
+  // --- Unified controls (top bar) ---
+  const btnOpen = document.getElementById('btn-open');
+  const file = document.getElementById('file');
+  const url = document.getElementById('url');
+  const btnLoadUrl = document.getElementById('btn-load-url');
+  const pdb = document.getElementById('pdb');
+  const btnLoadPdb = document.getElementById('btn-load-pdb');
+
+  btnOpen.addEventListener('click', ()=> file.click());
+  document.querySelector('label[for="file"]').addEventListener('click', ()=> file.click());
+
+  file.addEventListener('change', async (e)=>{
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    await nglLoad(f, {ext: f.name.split('.').pop()});
+    await molstarLoadFile(f); // try also in Mol*; for VR prefer hosted URL for CORS
+    e.target.value='';
+  });
+
+  btnLoadUrl.addEventListener('click', async ()=>{
+    const u = url.value.trim(); if (!u) return alert('Enter a URL');
+    await nglLoad(u, {});
+    await molstarLoadUrl(u);
+  });
+
+  btnLoadPdb.addEventListener('click', async ()=>{
+    const id = (pdb.value||'').trim(); if (!id) return alert('Enter a PDB ID');
+    const scheme = 'rcsb://'+id; // NGL built-in fetcher
+    await nglLoad(scheme, {});
+    await molstarLoadPdbId(id);
+  });
+
+  // Initial quick sanity load
+  (async()=>{ try{ await nglLoad('rcsb://1crn'); nglSetSpeed(); }catch(_){} })();
+
+})();
+</script>
 </body>
 </html>
