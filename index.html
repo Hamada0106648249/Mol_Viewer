@@ -3,312 +3,269 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Unified MD Trajectory Viewer — Smoothing + VR — Dr. Ahmed Sayed</title>
-  <!-- Left: NGL for robust local uploads + true trajectory mode with interpolation -->
+  <title>MD Trajectory Viewer — Expert Build (NGL + Movie Export)</title>
+  <!-- NGL (robust local uploads + true trajectory mode + interpolation) -->
   <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
-  <!-- Right: Mol* for WebXR/VR and RCSB-native look (pinned version) -->
-  <link rel="stylesheet" href="https://unpkg.com/molstar@3.49.0/build/viewer/molstar.css" />
-  <script src="https://unpkg.com/molstar@3.49.0/build/viewer/molstar.js" defer></script>
   <style>
     :root { --bg:#0b1021; --panel:#12172b; --ink:#e8ebff; }
     html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial}
-    .grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr;gap:10px;height:100%}
-    .hdr{grid-column:1/3;background:var(--panel);padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .hdr input,.hdr select,.hdr button{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:var(--ink);border-radius:8px;padding:6px 10px}
-    .hdr button{cursor:pointer}
-    .col{position:relative}
-    #ngl,#molstar{position:absolute;inset:0}
-    .ttl{font-weight:700}
-    .note{font-size:12px;opacity:.9;line-height:1.35}
-    .panel{position:absolute;left:10px;top:10px;z-index:5;background:rgba(0,0,0,.5);padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.15)}
-    .log{position:absolute;right:10px;top:10px;z-index:6;width:420px;max-height:48vh;overflow:auto;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);font:12px/1.35 ui-monospace,monospace}
-    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    label.small{font-size:12px}
+    .layout{display:grid;grid-template-rows:auto auto 1fr;gap:10px;height:100%;}
+    .bar{background:var(--panel);padding:10px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .bar input,.bar select,.bar button{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:var(--ink);border-radius:8px;padding:6px 10px}
+    .bar button{cursor:pointer}
+    .panels{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 10px}
+    .panel{background:rgba(18,23,43,.9);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    .panel h3{margin:0 10px 0 0;font-size:14px}
+    .panel label{font-size:12px}
+    #viewer{position:relative;margin:0 10px 10px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;overflow:hidden}
+    #ngl{position:absolute;inset:0}
+    .log{position:absolute;right:14px;bottom:14px;z-index:6;width:420px;max-height:40vh;overflow:auto;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);font:12px/1.35 ui-monospace,monospace}
+    .stretch{flex:1}
   </style>
 </head>
 <body>
-  <div class="grid">
-    <div class="hdr">
-      <span class="ttl">Unified MD Trajectory Viewer — <b>NGL Smoothing</b> + <b>Mol* VR</b> — Dr. Ahmed Sayed</span>
-
+  <div class="layout">
+    <!-- Loader bar -->
+    <div class="bar">
+      <strong>MD Trajectory Viewer — Expert Build</strong>
       <button id="btn-open" type="button">Open File…</button>
       <label for="file" style="text-decoration:underline;cursor:pointer">Choose File</label>
-      <input id="file" type="file" accept=".pdb,.cif,.mmcif,.mmtf,.gro,.xtc,.dcd,.trr,.ent" style="display:none" />
-
+      <input id="file" type="file" accept=".pdb,.cif,.mmcif,.mmtf,.gro,.ent" style="display:none" />
       <span>|</span>
       <label>URL <input id="url" type="url" size="40" placeholder="https://…/traj.pdb (CORS required)"></label>
       <button id="btn-load-url" type="button">Load URL</button>
-
-      <span>|</span>
-      <label>PDB ID <input id="pdb" size="6" placeholder="1CRN"></label>
-      <button id="btn-load-pdb" type="button">Fetch</button>
-
-      <span class="note">Left (NGL): plays local/URL trajectories with true trajectory mode + interpolation. Right (Mol*): VR (WebXR) + timeline for multi-model inputs.</span>
+      <span class="stretch"></span>
+      <em style="font-size:12px;opacity:.9">Tip: Use multi-model PDB/mmCIF (MODEL/ENDMDL) for web playback</em>
     </div>
 
-    <div class="col" id="col-ngl">
+    <!-- Controls: strictly separated -->
+    <div class="panels">
+      <!-- Playback controls -->
+      <div class="panel" id="panel-play">
+        <h3>Playback</h3>
+        <label>Interpolation
+          <select id="interp">
+            <option value="none">none</option>
+            <option value="linear">linear</option>
+            <option value="spline" selected>spline</option>
+          </select>
+        </label>
+        <label>Speed <input type="range" id="speed" min="0" max="100" value="60"></label>
+        <label>Frame <input type="range" id="frame" min="0" max="0" value="0"></label>
+        <span id="frameInfo" style="font-size:12px">0 / 0</span>
+        <button id="btn-play" type="button">Play</button>
+        <button id="btn-pause" type="button">Pause</button>
+        <span id="status" style="font-size:12px;opacity:.9"></span>
+      </div>
+
+      <!-- Recording controls (completely separate) -->
+      <div class="panel" id="panel-rec">
+        <h3>Movie Export</h3>
+        <label>FPS
+          <select id="rec-fps">
+            <option>24</option>
+            <option selected>30</option>
+            <option>60</option>
+          </select>
+        </label>
+        <label>Quality (kbps)
+          <select id="rec-kbps">
+            <option>3000</option>
+            <option selected>6000</option>
+            <option>12000</option>
+          </select>
+        </label>
+        <label>Filename <input id="rec-name" value="trajectory.webm" size="18"></label>
+        <button id="btn-rec-start" type="button">Start Recording</button>
+        <button id="btn-rec-stop" type="button" disabled>Stop</button>
+        <a id="rec-download" style="display:none;text-decoration:underline;">Download</a>
+      </div>
+    </div>
+
+    <!-- Viewer -->
+    <div id="viewer" style="height:100%">
       <div id="ngl"></div>
-      <div class="panel">
-        <div class="row"><b>NGL — Trajectory & Smoothing</b></div>
-        <div class="row">
-          <label class="small">Interp
-            <select id="interp">
-              <option value="none">none</option>
-              <option value="linear">linear</option>
-              <option value="spline" selected>spline</option>
-            </select>
-          </label>
-          <label class="small">Speed <input type="range" id="speed" min="0" max="100" value="60"></label>
-          <label class="small">Frame <input type="range" id="frame" min="0" max="0" value="0"></label>
-          
-        </div>
-        <div class="row">
-          <b class="small">Movie export</b>
-          <button id="btn-rec-start" type="button">Start Recording</button>
-          <button id="btn-rec-stop" type="button" disabled>Stop & Download</button>
-          <a id="rec-download" class="small" style="display:none;text-decoration:underline;" download="trajectory.webm">Download ready</a>
-        </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col" id="col-molstar">
-      <div id="molstar"></div>
-      <div class="panel"><b>Mol* — VR (WebXR)</b>
-        <div class="note">Use the VR headset icon in Mol* controls when available. For local files, VR works best when the file is hosted via HTTPS with CORS (e.g., same GitHub Pages repo).</div>
-      </div>
+      <div class="log" id="log"></div>
     </div>
   </div>
-
-  <div class="log" id="log"></div>
 
 <script>
 (function(){
   const log = document.getElementById('log');
   const L = (...a)=>{const s=a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' '); log.innerHTML = '<div>'+s+'</div>'+log.innerHTML; console.log(...a);};
 
-  // --- NGL VIEWER (left) ---
+  // ---------- NGL Stage ----------
   const stage = new NGL.Stage('ngl', {backgroundColor:'#0b1021'});
   window.addEventListener('resize', ()=>{stage.handleResize();});
-  let nglComp = null;      // structure component
-  let nglTraj = null;      // NGL trajectory object (if any)
-  let nFrames = 0;         // total frames
-  let curFrame = 0;        // current frame index
-  let playing = false;     // manual player state
-  let playTimer = null;    // timer id for manual loop
 
-  function shouldAsTrajectory(name){
-    const ext = (name||'').split('.').pop().toLowerCase();
-    return ['pdb','ent','cif','mmcif','mmtf','gro'].includes(ext);
-  }
+  // State
+  let comp = null;      // StructureComponent
+  let traj = null;      // Trajectory (if available)
+  let nFrames = 0;      // number of frames
+  let cur = 0;          // current frame
+  let playing = false;  // manual player state
+  let timer = null;     // manual timer
 
-  function detectFrames(){
-    // Prefer NGL Trajectory if available
-    if (nglTraj && Number.isFinite(nglTraj.frameCount)) return nglTraj.frameCount|0;
-    // Fallback heuristics
-    try { if (nglComp && nglComp.maxFrame != null) return (nglComp.maxFrame|0) + 1; } catch(_){ }
-    try { const f = nglComp?.structure?.frames; if (Array.isArray(f)) return f.length|0; } catch(_){ }
-    return 1;
-  }
-
-  async function nglLoad(source, opts){
-    try{
-      // reset
-      if (nglComp) { stage.removeComponent(nglComp); }
-      nglComp = null; nglTraj = null; nFrames = 0; curFrame = 0; stopManual();
-
-      const isFile = (source instanceof File) || (source instanceof Blob);
-      const name = isFile ? source.name : (typeof source === 'string' ? source : '');
-      const primaryOpts = Object.assign({}, opts||{});
-      if (shouldAsTrajectory(name) || typeof source === 'string') primaryOpts.asTrajectory = true;
-
-      L('NGL loading (asTrajectory preferred):', name || source);
-      try {
-        nglComp = await stage.loadFile(source, primaryOpts);
-      } catch(err1){
-        L('asTrajectory load failed, retrying without:', err1.message||err1);
-        const fallbackOpts = Object.assign({}, opts||{}); delete fallbackOpts.asTrajectory;
-        nglComp = await stage.loadFile(source, fallbackOpts);
-      }
-
-      // Default rep and view
-      nglComp.addRepresentation('cartoon', {colorScheme:'chainname'});
-      nglComp.autoView();
-
-      // Try to find trajectory
-      const list = nglComp.trajectoryList || [];
-      nglTraj = list.length ? list[0] : null;
-      nFrames = detectFrames();
-
-      // bind signals if possible
-      bindTrajSignals();
-
-      const frameSlider = document.getElementById('frame');
-      const frameInfo = document.getElementById('frameInfo');
-      frameSlider.max =;
-      frameSlider.value = 0; frameInfo.textContent = `0 / ${Math.max(0, nFrames-1)}`;
-
-      // Apply initial playback params
-      setNglSpeed();
-      setNglInterpolation();
-
-      // Hook manual frame control to both paths
-      frameSlider.oninput = ()=>{
-        const f = parseInt(frameSlider.value,10)|0; curFrame = f; frameInfo.textContent = `${f}oad error:', e.message||e); alert('NGL load failed: '+(e.message||e)); }
-  }
-
-  function setNglInterpolation(){
-    if (!nFrames) return;
-    const mode = document.getElementById('interp').value; // 'none'|'linear'|'spline'
-    if (nglTraj && typeof nglTraj.setFrameInterpolation === 'function') {
-      nglTraj.setFrameInterpolation(mode);
-      L('Interpolation mode (trajectory):', mode);
-    } else {
-      L('Interpolation mode (manual):', mode, '- trajectory API not available; using discrete frames.');
-    }
-  }
-
-  function setNglSpeed(){
-    const t = parseInt(document.getElementById('speed').value,10)/100; // 0..1
-    const ms = Math.round(30 + (1-t)*220); // 250..30 ms per frame
-    if (nglTraj && nglTraj.player) nglTraj.player.timeout = ms;
-    // store for manual fallback
-    document.getElementById('speed').dataset.ms = String(ms);
-    L('Playback speed (ms/frame):', ms);
-  }
-
-  function stepManual(){
-    if (!playing || !nFrames) return;
-    const ms = parseInt(document.getElementById('speed').dataset.ms||'100',10);
-    curFrame = (curFrame + 1) % nFrames;
-    if (nglTraj && typeof nglTraj.setFrame === 'function') nglTraj.setFrame(curFrame);
-    else if (nglComp && typeof nglComp.setFrame === 'function') nglComp.setFrame(curFrame);
-    try { nglComp.updateRepresentations({ what: { position: true } }); } catch(_){ }
-    const frameSlider = document.getElementById('frame');
-    const frameInfo = document.getElementById('frameTraj.player.pause === 'function') nglTraj.player.pause();
-    stopManual();
-  }
-  function stopManual(){ playing = false; if (playTimer){ clearTimeout(playTimer); playTimer=null; } }
-
-  document.getElementById('interp').addEventListener('change', setNglInterpolation);
-  document.getElementById('speed').addEventListener('input', setNglSpeed);
-  document.getElementById('btn-play').addEventListener('click', play);
-  document.getElementById('btn-pause').addEventListener('click', pause);
-
-  // If the trajectory exposes a frameChanged signal, force a rep update when it fires
-  function bindTrajSignals(){
-    if (!nglTraj || !nglTraj.signals || !nglTraj.signals.frameChanged) return;
-    try { nglTraj.signals.frameChanged.add(()=>{ try { nglComp.updateRepresentations({ what: { position: true } }); } catch(_){} }); } catch(_){ }
-  }
-
-  let cartoonOn=true; document.getElementById('btn-repr').addEventListener('click', function(){
-    if (!nglComp) return; nglComp.removeAllRepresentations();
-    if (cartoonOn){ nglComp.addRepresentation('licorice'); this.textContent='Licorice'; }
-    else { nglComp.addRepresentation('cartoon',{colorScheme:'chainname'}); this.textContent='Cartoon'; }
-    cartoonOn=!cartoonOn;
-  });
-
-  // --- Recording (NGL canvas -> WebM) ---
-  const rec = { mediaRecorder: null, chunks: [] };
-  const btnRecStart = document.getElementById('btn-rec-start');
-  const btnRecStop  = document.getElementById('btn-rec-stop');
-  const linkRec     = document.getElementById('rec-download');
-
-  function getCanvas(){ return stage.viewer.renderer.domElement; }
-
-  btnRecStart.addEventL    const stream = canvas.captureStream(30); // 30 fps capture
-      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm;codecs=vp8';
-      rec.chunks = [];
-      rec.mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6000000 });
-      rec.mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
-      rec.mediaRecorder.onstop = () => {
-        const blob = new Blob(rec.chunks, { type: rec.mediaRecorder.mimeType || 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        linkRec.href = url; linkRec.style.display = 'inline'; linkRec.textContent = 'Download ready';
-        linkRec.download = 'trajectory.webm';
-        btnRecStop.disabled = true; btnRecStart.disabled = false;
-      };
-      rec.mediaRecorder.start();
-      linkRec.style.display = 'noe; btnRecStop.disabled = false;
-    }catch(e){ alert('Recording failed: '+(e.message||e)); }
-  });
-
-  btnRecStop.addEventListener('click', () => {
-    try{ if (rec.mediaRecorder && rec.mediaRecorder.state !== 'inactive') rec.mediaRecorder.stop(); }catch(_){ }
-  });
-
-  // --- MOL* VIEWER (right) for VR ---
-  let molstarViewer = null;
-  function ensureMolstar(){
-    if (molstarViewer) return molstarViewer;
-    if (!window.molstar || !molstar.Viewer){ L('Mol* not ready.'); return null; }
-    molstarViewer = new molstar.Viewer('molstar', {
-      layoutIsExpanded: true,
-      layoutShowControls: true,
-      layoutShowSequence: true,
-      viewportShowAnimation: true,
-      pluginStateServer: 'https://webchem.ncbr.muni.cz/molstar-state',
-      volumeStreamingServer: 'https://ds.litemol.org'
-    });
-    molstarViewer.setBackground({variant:'dark'});
-    L('Mol* initialized');
-    return molstarViewer;
-  }
-
-  async function molstarLoadPdbId(id){
-    const v = ensureMolstar(); if (!v) return;
-    try{ await v.clear(); await v.loadPdbId(id, { }); v.resetCamera(); L('Mol* loaded PDB', id); }
-    catch(e){ L('Mol* load PDB error:', e.message||e); }
-  }
-  async function molstarLoadUrl(url){
-    const v = ensureMolstar(); if (!v) return;
-    const fmt = (url.split('?')[0].split('#')[0].split('.').pop()||'').toLowerCase();
-    const kind = ['cif','mmcif','bcif'].includes(fmt)?'mmcif': (['pdb','ent'].includes(fmt)?'pdb': (fmt==='mmtf'?'mmtf':'mmcif'));
-    try{ await v.clear(); await v.loadStructureFromUrl(url, kind, {}); v.resetCamera(); L('Mol* loaded URL', url); }
-    catch(e){ L('Mol* load URL error:', e.message||e); alert('Mol* URL load failed (CORS/format?). For VR, host the file in this repo and use its GitHub Pages URL.'); }
-  }
-  async function molstarLoadFile(file){
-    const v = ensureMolstar(); if (!v) return;
-    const name = file.name.toLowerCase();
-    const kind = name.endsWith('.pdb')||name.endsWith('.ent')?'pdb':(name.endsWith('.mmtf')?'mmtf': 'mmcif');
-    const text = await file.text();
-    try{ await v.clear(); await v.loadStructureFromData(text, kind, {}); v.resetCamera(); L('Mol* loaded local file', file.name); }
-    catch(e){ L('Mol* local load error:', e.message||e); }
-  }
-
-  // --- Unified controls (top bar) ---
+  // Elements
   const btnOpen = document.getElementById('btn-open');
   const file = document.getElementById('file');
   const url = document.getElementById('url');
   const btnLoadUrl = document.getElementById('btn-load-url');
-  const pdb = document.getElementById('pdb');
-  const btnLoadPdb = document.getElementById('btn-load-pdb');
+  const interpSel = document.getElementById('interp');
+  const speed = document.getElementById('speed');
+  const frame = document.getElementById('frame');
+  const frameInfo = document.getElementById('frameInfo');
+  const btnPlay = document.getElementById('btn-play');
+  const btnPause = document.getElementById('btn-pause');
+  const status = document.getElementById('status');
 
+  const recFps = document.getElementById('rec-fps');
+  const recKbps = document.getElementById('rec-kbps');
+  const recName = document.getElementById('rec-name');
+  const btnRecStart = document.getElementById('btn-rec-start');
+  const btnRecStop = document.getElementById('btn-rec-stop');
+  const recDownload = document.getElementById('rec-download');
+
+  // ---------- Helpers ----------
+  function shouldAsTrajectory(name){
+    const ext = (name||'').split('.').pop().toLowerCase();
+    return ['pdb','ent','cif','mmcif','mmtf','gro'].includes(ext);
+  }
+  function detectFrames(){
+    if (traj && Number.isFinite(traj.frameCount)) return traj.frameCount|0;
+    try { if (comp && comp.maxFrame != null) return (comp.maxFrame|0)+1; } catch(_){ }
+    try { const f = comp?.structure?.frames; if (Array.isArray(f)) return f.length|0; } catch(_){ }
+    return 1;
+  }
+  function msPerFrame(){ const t = parseInt(speed.value,10)/100; return Math.round(30 + (1-t)*220); }
+  function updateStatus(txt){ status.textContent = txt; }
+
+  async function loadSource(source, nameHint){
+    try{
+      // reset
+      if (comp) stage.removeComponent(comp);
+      comp=null; traj=null; nFrames=0; cur=0; stopManual();
+
+      const isFile = (source instanceof File) || (source instanceof Blob);
+      const name = nameHint || (isFile ? source.name : (typeof source==='string'?source:''));
+      const opts1 = {};
+      if (shouldAsTrajectory(name) || typeof source==='string') opts1.asTrajectory = true; // key for MODEL/ENDMDL
+
+      L('Loading (prefer asTrajectory):', name);
+      try { comp = await stage.loadFile(source, opts1); }
+      catch(e1){
+        L('Retry without asTrajectory:', e1.message||e1);
+        const opts2 = {}; comp = await stage.loadFile(source, opts2);
+      }
+
+      comp.addRepresentation('cartoon', {colorScheme:'chainname'});
+      comp.autoView();
+
+      const list = comp.trajectoryList||[]; traj = list.length? list[0] : null;
+      nFrames = detectFrames();
+      frame.max = Math.max(0, nFrames-1); frame.value = 0; frameInfo.textContent = `0 / ${Math.max(0, nFrames-1)}`;
+
+      applyInterpolation();
+
+      // When frames change, force visual update so positions repaint
+      bindTrajSignals();
+      forceRepaint();
+      updateStatus(nFrames>1? `Ready: ${nFrames} frames detected` : 'Single-frame structure');
+    }catch(e){
+      L('Load error:', e.message||e); alert('Load failed: '+(e.message||e));
+    }
+  }
+
+  function forceRepaint(){ try{ comp.updateRepresentations({ what: { position: true } }); }catch(_){} }
+
+  function bindTrajSignals(){
+    if (!traj || !traj.signals || !traj.signals.frameChanged) return;
+    try { traj.signals.frameChanged.add(()=> forceRepaint()); } catch(_){}
+  }
+
+  function applyInterpolation(){
+    if (!traj) return;
+    const mode = interpSel.value; // 'none' | 'linear' | 'spline'
+    if (typeof traj.setFrameInterpolation === 'function') {
+      traj.setFrameInterpolation(mode);
+      L('Interpolation:', mode);
+    } else {
+      L('Interpolation API not available; discrete frames only.');
+    }
+  }
+
+  function playNative(){
+    if (traj && traj.player && typeof traj.player.play==='function'){
+      traj.player.timeout = msPerFrame();
+      traj.player.play();
+      updateStatus('Playing (native TrajectoryPlayer)');
+      return true;
+    }
+    return false;
+  }
+  function playManual(){
+    if (playing || nFrames<=1) return;
+    playing = true; updateStatus('Playing (manual loop)');
+    (function step(){
+      if (!playing) return;
+      cur = (cur+1)%nFrames;
+      if (traj && typeof traj.setFrame==='function') traj.setFrame(cur);
+      else if (comp && typeof comp.setFrame==='function') comp.setFrame(cur);
+      forceRepaint();
+      frame.value = cur; frameInfo.textContent = `${cur} / ${Math.max(0, nFrames-1)}`;
+      timer = setTimeout(step, msPerFrame());
+    })();
+  }
+  function stopManual(){ playing=false; if (timer){ clearTimeout(timer); timer=null; } }
+  function pauseAll(){
+    if (traj && traj.player && typeof traj.player.pause==='function') traj.player.pause();
+    stopManual(); updateStatus('Paused');
+  }
+
+  // ---------- Wire Playback Controls ----------
   btnOpen.addEventListener('click', ()=> file.click());
   document.querySelector('label[for="file"]').addEventListener('click', ()=> file.click());
+  file.addEventListener('change', e=>{ const f=e.target.files&&e.target.files[0]; if (f) loadSource(f); e.target.value=''; });
+  btnLoadUrl.addEventListener('click', ()=>{ const u=url.value.trim(); if (u) loadSource(u,u); else alert('Enter a URL'); });
 
-  file.addEventListener('change', async (e)=>{
-    const f = e.target.files && e.target.files[0]; if (!f) return;
-    await nglLoad(f, { ext: f.name.split('.').pop() });
-    await molstarLoadFile(f); // optional VR for local files; for full VR, prefer hosted URL
-    e.target.value='';
+  interpSel.addEventListener('change', applyInterpolation);
+  speed.addEventListener('input', ()=>{ if (traj && traj.player) traj.player.timeout = msPerFrame(); });
+  frame.addEventListener('input', ()=>{
+    const f = parseInt(frame.value,10)|0; cur=f; frameInfo.textContent = `${f} / ${Math.max(0, nFrames-1)}`;
+    if (traj && typeof traj.setFrame==='function') traj.setFrame(f); else if (comp && typeof comp.setFrame==='function') comp.setFrame(f);
+    forceRepaint();
   });
+  btnPlay.addEventListener('click', ()=>{ if (!nFrames||nFrames===1){ updateStatus('No trajectory detected'); return; } if (!playNative()) playManual(); });
+  btnPause.addEventListener('click', pauseAll);
 
-  btnLoadUrl.addEventListener('click', async ()=>{
-    const u = url.value.trim(); if (!u) return alert('Enter a URL');
-    await nglLoad(u, {});
-    await molstarLoadUrl(u);
+  // ---------- Recording (separate) ----------
+  const rec = { mr:null, chunks:[] };
+  function nglCanvas(){ return stage.viewer.renderer.domElement; }
+
+  btnRecStart.addEventListener('click', ()=>{
+    try{
+      const fps = parseInt(recFps.value,10)||30;
+      const kbps = parseInt(recKbps.value,10)||6000;
+      const canvas = nglCanvas();
+      const stream = canvas.captureStream(fps);
+      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm;codecs=vp8';
+      rec.chunks = [];
+      rec.mr = new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond: kbps*1000 });
+      rec.mr.ondataavailable = e=>{ if (e.data && e.data.size) rec.chunks.push(e.data); };
+      rec.mr.onstop = ()=>{
+        const blob = new Blob(rec.chunks, { type: rec.mr.mimeType || 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        recDownload.href = url; recDownload.download = (recName.value||'trajectory.webm');
+        recDownload.style.display = 'inline'; recDownload.textContent = 'Download';
+        btnRecStop.disabled = true; btnRecStart.disabled = false;
+      };
+      rec.mr.start(); recDownload.style.display='none'; btnRecStart.disabled=true; btnRecStop.disabled=false;
+    }catch(e){ alert('Recording failed: '+(e.message||e)); }
   });
+  btnRecStop.addEventListener('click', ()=>{ try{ if (rec.mr && rec.mr.state!=='inactive') rec.mr.stop(); }catch(_){ } });
 
-  btnLoadPdb.addEventListener('click', async ()=>{
-    const id = (pdb.value||'').trim(); if (!id) return alert('Enter a PDB ID');
-    const scheme = 'rcsb://'+id; // NGL built-in fetcher
-    await nglLoad(scheme, {});
-    await molstarLoadPdbId(id);
-  });
-
-  // Initial sanity load (tiny protein)
-  (async()=>{ try{ await nglLoad('rcsb://1crn'); setNglSpeed(); }catch(_){} })();
+  // ---------- Initial sanity load ----------
+  (async()=>{ try{ await loadSource('rcsb://1crn','1crn'); }catch(_){} })();
 })();
 </script>
 </body>
