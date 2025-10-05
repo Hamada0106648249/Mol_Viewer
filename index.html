@@ -3,22 +3,24 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mol* VR Trajectory Viewer — Dr. Ahmed Sayed</title>
-  <!-- Use a pinned Mol* build to avoid API drift -->
+  <title>Mol* VR Trajectory Viewer — Dr. Ahmed Sayed (Stable)</title>
+  <!-- Pin a known-good Mol* build; avoid "latest" to prevent breaking changes -->
   <link rel="stylesheet" href="https://unpkg.com/molstar@3.49.0/build/viewer/molstar.css" />
-  <script src="https://unpkg.com/molstar@3.49.0/build/viewer/molstar.js"></script>
+  <script src="https://unpkg.com/molstar@3.49.0/build/viewer/molstar.js" defer></script>
   <style>
     html, body { height: 100%; margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background: #0b1021; }
     #app { position: absolute; inset: 0; }
-    .toolbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; z-index: 10; background: rgba(16,18,30,0.85); padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); }
+    .toolbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; z-index: 10; background: rgba(16,18,30,0.88); padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); }
     .toolbar * { color: #e8ebff; font-size: 13px; }
     .toolbar input, .toolbar select, .toolbar button { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 6px 10px; color: #e8ebff; }
     .toolbar button { cursor: pointer; }
     .spacer { flex: 1; }
     .dropzone { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border: 2px dashed rgba(255,255,255,0.35); color: #fff; border-radius: 16px; padding: 18px 22px; pointer-events: none; opacity: 0; transition: opacity .2s ease; font-weight: 600; background: rgba(0,0,0,0.35); }
     .dropzone.show { opacity: 1; }
-    .help { position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 10; background: rgba(16,18,30,0.85); color: #e8ebff; padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); line-height: 1.35; }
+    .help { position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 10; background: rgba(16,18,30,0.88); color: #e8ebff; padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); line-height: 1.35; }
     .help kbd { background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.18); }
+    .log { position: absolute; top: 10px; right: 10px; width: 340px; max-height: 45vh; overflow: auto; background: rgba(0,0,0,0.55); color: #d0d4ff; font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); }
+    .log b{color:#ffd58a}
     a.link { color: #a2b7ff; text-decoration: none; }
   </style>
 </head>
@@ -33,7 +35,7 @@
     <input type="file" id="file-input" accept=".pdb,.cif,.mmcif,.bcif,.mmtf,.ent" style="display:none" />
 
     <label>Load URL:
-      <input type="url" id="url-input" size="34" placeholder="https://…/trajectory.pdb">
+      <input type="url" id="url-input" size="34" placeholder="https://…/trajectory.pdb (must allow CORS)">
     </label>
     <button id="btn-load-url">Load</button>
 
@@ -43,28 +45,6 @@
     <button id="btn-load-pdb">Fetch</button>
 
     <span class="spacer"></span>
-
-    <label>Representation
-      <select id="repr">
-        <option value="auto" selected>Auto</option>
-        <option value="cartoon">Cartoon</option>
-        <option value="ball-and-stick">Ball &amp; Stick</option>
-        <option value="gaussian-surface">Surface</option>
-        <option value="line">Lines</option>
-        <option value="spacefill">Spacefill</option>
-      </select>
-    </label>
-
-    <label>Color
-      <select id="color">
-        <option value="chain-id" selected>Chain</option>
-        <option value="entity-id">Entity</option>
-        <option value="element-symbol">Element</option>
-        <option value="residue-name">Residue</option>
-        <option value="hydrophobicity">Hydrophobicity</option>
-        <option value="uniform">Uniform</option>
-      </select>
-    </label>
 
     <label>Quality
       <select id="quality">
@@ -79,28 +59,44 @@
   </div>
 
   <div class="dropzone" id="dropzone">Drop a multi-model PDB/mmCIF here to play as a trajectory</div>
+  <div class="log" id="log"></div>
 
   <div class="help">
-    <strong>How to get smooth playback</strong> — Load a <em>multi-model</em> file (a PDB or mmCIF containing many MODEL/ENDMDL frames). Use the bottom timeline to <em>Play</em> and toggle <em>Interpolate</em> for smoothing. For long movies, thin frames during export (e.g., every 50–200 ps) so the file stays lightweight for the web.
-    <br/>
-    If your browser/headset supports WebXR, a VR headset icon will appear in the lower-right controls — click it for immersive viewing.
+    <strong>Smoothing & VR</strong> — For **smoothing**, load a <em>multi-model</em> file (PDB/mmCIF with many MODEL/ENDMDL frames). Use the bottom timeline: **Play ▶** and toggle **Interpolate**. If your browser/headset supports WebXR, a **VR headset icon** appears in the viewer controls.
+    <br/>Tip: Thin frames on export (every 50–200 ps) to keep files fast in the browser. For URL loading, the server must send <code>Access-Control-Allow-Origin: *</code>.
   </div>
 
   <script>
-    // --- Initialize Mol* Viewer (use only public Viewer API calls) ---
-    const viewer = new molstar.Viewer('app', {
-      layoutIsExpanded: true,
-      layoutShowControls: true,          // left UI + bottom timeline (with Interpolate toggle)
-      layoutShowRemoteState: false,
-      layoutShowSequence: true,
-      layoutShowLog: false,
-      viewportShowExpand: true,
-      viewportShowSelectionMode: true,
-      viewportShowAnimation: true,
-      pluginStateServer: 'https://webchem.ncbr.muni.cz/molstar-state',
-      volumeStreamingServer: 'https://ds.litemol.org'
-    });
+  window.addEventListener('DOMContentLoaded', async () => {
+    const log = document.getElementById('log');
+    const L = (...args) => { const line = args.map(x => (typeof x==='string'?x:JSON.stringify(x))).join(' '); log.innerHTML = `<div>${line}</div>` + log.innerHTML; console.log(...args); };
 
+    if (!window.molstar || !molstar.Viewer) {
+      L('<b>Mol*</b> failed to load. Check your network or CDN access.');
+      return;
+    }
+
+    let viewer;
+    try {
+      viewer = new molstar.Viewer('app', {
+        layoutIsExpanded: true,
+        layoutShowControls: true,          // left UI + bottom timeline (with Interpolate toggle)
+        layoutShowSequence: true,
+        layoutShowLog: false,
+        viewportShowExpand: true,
+        viewportShowSelectionMode: true,
+        viewportShowAnimation: true,
+        pluginStateServer: 'https://webchem.ncbr.muni.cz/molstar-state',
+        volumeStreamingServer: 'https://ds.litemol.org'
+      });
+      viewer.setBackground({ variant: 'dark' });
+      L('Mol* initialized.');
+    } catch (e) {
+      L('Failed to initialize Mol* viewer:', e.message || e);
+      return;
+    }
+
+    // --- UI elements ---
     const ui = {
       openFileBtn: document.getElementById('btn-open-file'),
       fileInput: document.getElementById('file-input'),
@@ -108,97 +104,72 @@
       loadUrlBtn: document.getElementById('btn-load-url'),
       pdbId: document.getElementById('pdb-id'),
       loadPdbBtn: document.getElementById('btn-load-pdb'),
-      repr: document.getElementById('repr'),
-      color: document.getElementById('color'),
       quality: document.getElementById('quality'),
       screenshot: document.getElementById('btn-screenshot'),
       dropzone: document.getElementById('dropzone')
     };
 
-    function getFormatFromUrl(u){
+    const getFormatFromUrl = (u) => {
       const ext = (u.split('?')[0].split('#')[0].split('.').pop() || '').toLowerCase();
       if (['cif','mmcif','bcif'].includes(ext)) return 'mmcif';
       if (['pdb','ent'].includes(ext)) return 'pdb';
       if (['mmtf'].includes(ext)) return 'mmtf';
       return 'mmcif';
+    };
+
+    async function safeLoad(promise, what){
+      try { await promise; L('Loaded:', what); }
+      catch(e){ L('Load failed for', what, '-', e.message || e); alert('Load failed: ' + (e.message || e)); }
     }
 
     async function loadFromUrl(url){
-      try {
-        await viewer.clear();
-        await viewer.loadStructureFromUrl(url, getFormatFromUrl(url), {
-          representationParams: { theme: { globalName: ui.color.value }, quality: ui.quality.value }
-        });
-        await applyRepresentation();
-        viewer.resetCamera();
-      } catch (e) { console.error(e); alert('Failed to load from URL. Ensure CORS is enabled on the file host and the URL is HTTPS.'); }
+      await safeLoad(viewer.loadStructureFromUrl(url, getFormatFromUrl(url), { representationParams: { quality: ui.quality.value } }), url);
+      viewer.resetCamera();
     }
 
     async function loadFromPdbId(id){
-      try {
-        await viewer.clear();
-        await viewer.loadPdbId(id, { representationParams: { theme: { globalName: ui.color.value }, quality: ui.quality.value } });
-        await applyRepresentation();
-        viewer.resetCamera();
-      } catch (e) { console.error(e); alert('Failed to fetch PDB ID. Check the ID and your internet connection.'); }
+      await safeLoad(viewer.loadPdbId(id, { representationParams: { quality: ui.quality.value } }), 'PDB ' + id);
+      viewer.resetCamera();
     }
 
     async function loadFromFile(file){
-      try {
-        await viewer.clear();
-        const data = await file.text();
-        const name = file.name.toLowerCase();
-        let format = 'mmcif';
-        if (name.endsWith('.pdb') || name.endsWith('.ent')) format = 'pdb';
-        else if (name.endsWith('.cif') || name.endsWith('.mmcif') || name.endsWith('.bcif')) format = 'mmcif';
-        else if (name.endsWith('.mmtf')) format = 'mmtf';
+      const name = file.name.toLowerCase();
+      let format = 'mmcif';
+      if (name.endsWith('.pdb') || name.endsWith('.ent')) format = 'pdb';
+      else if (name.endsWith('.cif') || name.endsWith('.mmcif') || name.endsWith('.bcif')) format = 'mmcif';
+      else if (name.endsWith('.mmtf')) format = 'mmtf';
 
-        await viewer.loadStructureFromData(data, format, { representationParams: { theme: { globalName: ui.color.value }, quality: ui.quality.value } });
-        await applyRepresentation();
-        viewer.resetCamera();
-      } catch (e) { console.error(e); alert('Failed to load the file. Ensure it is a valid PDB/mmCIF/mmtf and, for trajectories, that it is a multi-model file.'); }
-    }
-
-    async function applyRepresentation(){
-      const type = ui.repr.value;
-      // Use the Viewer convenience method; 'auto' lets Mol* choose best mix
-      await viewer.setStructureRepresentation(type === 'auto' ? 'auto' : type, {
-        theme: { globalName: ui.color.value },
-        quality: ui.quality.value
-      });
+      const data = await file.text();
+      await safeLoad(viewer.loadStructureFromData(data, format, { representationParams: { quality: ui.quality.value } }), file.name);
+      viewer.resetCamera();
     }
 
     // Toolbar wiring
     ui.openFileBtn.addEventListener('click', () => ui.fileInput.click());
-    ui.fileInput.addEventListener('change', e => {
-      const f = e.target.files?.[0]; if (f) loadFromFile(f);
-      ui.fileInput.value = '';
-    });
-    ui.loadUrlBtn.addEventListener('click', () => { const u = ui.urlInput.value.trim(); if (u) loadFromUrl(u); });
-    ui.loadPdbBtn.addEventListener('click', () => { const id = ui.pdbId.value.trim(); if (id) loadFromPdbId(id); });
-    ui.repr.addEventListener('change', applyRepresentation);
-    ui.color.addEventListener('change', applyRepresentation);
-    ui.quality.addEventListener('change', applyRepresentation);
+    ui.fileInput.addEventListener('change', e => { const f = e.target.files?.[0]; if (f) loadFromFile(f); e.target.value=''; });
+    ui.loadUrlBtn.addEventListener('click', () => { const u = ui.urlInput.value.trim(); if (u) loadFromUrl(u); else alert('Enter a URL.'); });
+    ui.loadPdbBtn.addEventListener('click', () => { const id = ui.pdbId.value.trim(); if (id) loadFromPdbId(id); else alert('Enter a PDB ID.'); });
 
     ui.screenshot.addEventListener('click', async () => {
       const img = await viewer.plugin.managers.snapshot.captureImage({ transparent: false });
       const a = document.createElement('a'); a.href = img.data; a.download = 'molstar_snapshot.png'; a.click();
     });
 
-    // Drag & drop support
+    // Drag & drop
     window.addEventListener('dragover', e => { e.preventDefault(); ui.dropzone.classList.add('show'); });
     window.addEventListener('dragleave', () => ui.dropzone.classList.remove('show'));
     window.addEventListener('drop', e => { e.preventDefault(); ui.dropzone.classList.remove('show'); const f = e.dataTransfer?.files?.[0]; if (f) loadFromFile(f); });
 
-    // URL parameters: ?src=… or ?pdb=XXXX
+    // Auto-test: load a small PDB so you immediately see the UI working
+    try { await loadFromPdbId('1crn'); } catch(_){}
+
+    // URL params: ?src=… or ?pdb=XXXX
     const params = new URLSearchParams(location.search);
     const src = params.get('src');
     const pdb = params.get('pdb');
-    if (src) { ui.urlInput.value = src; loadFromUrl(src); }
-    else if (pdb) { ui.pdbId.value = pdb; loadFromPdbId(pdb); }
-
-    // Scene defaults
-    viewer.setBackground({ variant: 'dark' });
+    if (src) ui.urlInput.value = src, loadFromUrl(src);
+    if (pdb) ui.pdbId.value = pdb, loadFromPdbId(pdb);
+  });
   </script>
 </body>
 </html>
