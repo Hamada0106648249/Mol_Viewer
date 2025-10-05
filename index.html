@@ -9,17 +9,17 @@
   <script src="https://unpkg.com/molstar@3.49.0/build/viewer/molstar.js" defer></script>
   <style>
     html, body { height: 100%; margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; background: #0b1021; }
-    #app { position: absolute; inset: 0; }
-    .toolbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; z-index: 10; background: rgba(16,18,30,0.88); padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); }
+    #app { position: absolute; inset: 0; z-index: 1; }
+    .toolbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; z-index: 2147483647; background: rgba(16,18,30,0.88); padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); pointer-events: auto; }
     .toolbar * { color: #e8ebff; font-size: 13px; }
-    .toolbar input, .toolbar select, .toolbar button { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 6px 10px; color: #e8ebff; }
+    .toolbar input, .toolbar select, .toolbar button, .toolbar label { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 6px 10px; color: #e8ebff; }
     .toolbar button { cursor: pointer; }
     .spacer { flex: 1; }
-    .dropzone { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border: 2px dashed rgba(255,255,255,0.35); color: #fff; border-radius: 16px; padding: 18px 22px; pointer-events: none; opacity: 0; transition: opacity .2s ease; font-weight: 600; background: rgba(0,0,0,0.35); }
+    .dropzone { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border: 2px dashed rgba(255,255,255,0.35); color: #fff; border-radius: 16px; padding: 18px 22px; pointer-events: none; opacity: 0; transition: opacity .2s ease; font-weight: 600; background: rgba(0,0,0,0.35); z-index: 2147483646; }
     .dropzone.show { opacity: 1; }
-    .help { position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 10; background: rgba(16,18,30,0.88); color: #e8ebff; padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); line-height: 1.35; }
+    .help { position: absolute; bottom: 10px; left: 10px; right: 10px; z-index: 2147483646; background: rgba(16,18,30,0.88); color: #e8ebff; padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); line-height: 1.35; pointer-events: auto; }
     .help kbd { background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.18); }
-    .log { position: absolute; top: 10px; right: 10px; width: 340px; max-height: 45vh; overflow: auto; background: rgba(0,0,0,0.55); color: #d0d4ff; font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); }
+    .log { position: absolute; top: 10px; right: 10px; width: 360px; max-height: 50vh; overflow: auto; background: rgba(0,0,0,0.55); color: #d0d4ff; font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); z-index: 2147483646; pointer-events: auto; }
     .log b{color:#ffd58a}
     a.link { color: #a2b7ff; text-decoration: none; }
   </style>
@@ -31,18 +31,21 @@
   <div class="toolbar" id="toolbar">
     <strong>Mol* VR Trajectory Viewer — Dr. Ahmed Sayed</strong>
 
-    <button id="btn-open-file" title="Open local multi-model PDB/mmCIF (drag & drop also works)">Open File…</button>
+    <button id="btn-open-file" type="button" title="Open local multi-model PDB/mmCIF (drag & drop also works)">Open File…</button>
     <input type="file" id="file-input" accept=".pdb,.cif,.mmcif,.bcif,.mmtf,.ent" style="display:none" />
+    <label for="file-input" id="file-fallback" style="cursor:pointer;">Choose File</label>
 
     <label>Load URL:
       <input type="url" id="url-input" size="34" placeholder="https://…/trajectory.pdb (must allow CORS)">
     </label>
-    <button id="btn-load-url">Load</button>
+    <button id="btn-load-url" type="button">Load</button>
 
     <label>PDB ID:
-      <input id="pdb-id" size="6" maxlength="8" placeholder="6LU7" />
+      <input id="pdb-id" size="6" maxlength="8" placeholder="1CRN" />
     </label>
-    <button id="btn-load-pdb">Fetch</button>
+    <button id="btn-load-pdb" type="button">Fetch</button>
+
+    <button id="btn-test" type="button" title="Quick click test">Click Test</button>
 
     <span class="spacer"></span>
 
@@ -145,15 +148,16 @@
     }
 
     // Toolbar wiring
-    ui.openFileBtn.addEventListener('click', () => ui.fileInput.click());
-    ui.fileInput.addEventListener('change', e => { const f = e.target.files?.[0]; if (f) loadFromFile(f); e.target.value=''; });
-    ui.loadUrlBtn.addEventListener('click', () => { const u = ui.urlInput.value.trim(); if (u) loadFromUrl(u); else alert('Enter a URL.'); });
-    ui.loadPdbBtn.addEventListener('click', () => { const id = ui.pdbId.value.trim(); if (id) loadFromPdbId(id); else alert('Enter a PDB ID.'); });
+    ui.openFileBtn.addEventListener('click', (ev) => { ev.preventDefault(); ui.fileInput.click(); });
+    const fallbackLabel = document.getElementById('file-fallback');
+    fallbackLabel.addEventListener('click', (ev) => { ev.preventDefault(); ui.fileInput.click(); });
 
-    ui.screenshot.addEventListener('click', async () => {
-      const img = await viewer.plugin.managers.snapshot.captureImage({ transparent: false });
-      const a = document.createElement('a'); a.href = img.data; a.download = 'molstar_snapshot.png'; a.click();
-    });
+    ui.fileInput.addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) loadFromFile(f); e.target.value=''; });
+    ui.loadUrlBtn.addEventListener('click', (ev) => { ev.preventDefault(); const u = ui.urlInput.value.trim(); if (u) loadFromUrl(u); else alert('Enter a URL.'); });
+    ui.loadPdbBtn.addEventListener('click', (ev) => { ev.preventDefault(); const id = ui.pdbId.value.trim(); if (id) loadFromPdbId(id); else alert('Enter a PDB ID.'); });
+
+    // Simple sanity click tester (should log immediately)
+    document.getElementById('btn-test').addEventListener('click', () => { L('Click test: Toolbar is receiving events.'); alert('Toolbar click OK'); });
 
     // Drag & drop
     window.addEventListener('dragover', e => { e.preventDefault(); ui.dropzone.classList.add('show'); });
