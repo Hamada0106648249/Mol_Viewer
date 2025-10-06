@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MD Trajectory Viewer — Expert Build (Auto‑Fix Trajectories + Movie Export)</title>
+  <title>MD Trajectory Viewer — Expert Build (Auto-Fix Trajectories + Movie Export)</title>
   <!-- Pin a known-stable NGL release -->
   <script src="https://unpkg.com/ngl@0.10.4/dist/ngl.js"></script>
   <style>
@@ -35,12 +35,11 @@
       <label>URL <input id="url" type="url" size="40" placeholder="https://…/traj.pdb (CORS required)"></label>
       <button id="btn-load-url" type="button">Load URL</button>
       <span class="stretch"></span>
-      <em style="font-size:12px;opacity:.9">Tip: Use multi-model PDB/mmCIF (MODEL/ENDMDL) or topology+XTC/TRR/DCD</em>
+      <em style="font-size:12px;opacity:.9">Tip: Use multi-model PDB/mmCIF (MODEL/ENDMDL) or topology + XTC/TRR/DCD</em>
     </div>
 
-    <!-- Controls: separated -->
+    <!-- Controls -->
     <div class="panels">
-      <!-- Playback controls -->
       <div class="panel" id="panel-play">
         <h3>Playback</h3>
         <label>Interpolation
@@ -58,7 +57,6 @@
         <span id="status" style="font-size:12px;opacity:.9"></span>
       </div>
 
-      <!-- Recording controls -->
       <div class="panel" id="panel-rec">
         <h3>Movie Export</h3>
         <label>FPS
@@ -100,7 +98,7 @@
 
   // State
   let comp = null;      // StructureComponent
-  let rep = null;       // Representation (for selection-based playback)
+  let rep = null;       // Representation (selection-based fallback)
   let traj = null;      // Trajectory (if available)
   let nFrames = 0;      // number of frames
   let cur = 0;          // current frame (0-based)
@@ -128,7 +126,7 @@
   const recDownload = document.getElementById('rec-download');
 
   // ---------- Helpers ----------
-  // PDB auto-fix helpers to guarantee visible trajectory frames
+  // PDB auto-fixers (wrap concatenated frames with MODEL/ENDMDL)
   async function readText(source){
     if (source instanceof File || source instanceof Blob) return await source.text();
     if (typeof source === 'string') { try { const r = await fetch(source,{mode:'cors'}); return await r.text(); } catch(_) { return null; } }
@@ -161,6 +159,10 @@
     return { modelCount, endmdlCount, atomsPerModel, inferred };
   }
   function rebuildMultiModelPDB(text, atomsPerFrame){
+    const lines = text split(/\r?\n/); // <-- will be corrected below
+  }
+  // (Correct the accidental space introduced by some editors)
+  function rebuildMultiModelPDB(text, atomsPerFrame){
     const lines = text.split(/\r?\n/);
     const header = lines.filter(ln => /^(HEADER|TITLE|REMARK|CRYST1|SCALE|ORIGX|SCALE|REMARK\s\d+)/.test(ln));
     const atomLines = lines.filter(ln => ln.startsWith('ATOM') || ln.startsWith('HETATM'));
@@ -190,7 +192,7 @@
   function msPerFrame(){ const t = parseInt(speed.value,10)/100; return Math.round(30 + (1-t)*220); }
   function updateStatus(txt){ status.textContent = txt; }
 
-  // Show a specific frame reliably (native trajectory preferred; selection fallback guaranteed)
+  // Show a specific frame (native preferred; selection fallback is guaranteed)
   function showFrame(i){
     if (!comp) return;
     nFrames = detectFrames();
@@ -284,6 +286,7 @@
     }
   }
 
+  function msPerFrame(){ const t = parseInt(speed.value,10)/100; return Math.round(30 + (1-t)*220); }
   function playNative(){
     if (traj && traj.player && typeof traj.player.play==='function'){
       try {
@@ -322,7 +325,7 @@
   btnPlay.addEventListener('click', ()=>{ if (!nFrames||nFrames===1){ updateStatus('No trajectory detected'); return; } if (!playNative()) playManual(); });
   btnPause.addEventListener('click', pauseAll);
 
-  // ---------- Recording (separate) ----------
+  // ---------- Recording ----------
   const rec = { mr:null, chunks:[] };
   function nglCanvas(){ return stage.viewer.renderer.domElement; }
 
