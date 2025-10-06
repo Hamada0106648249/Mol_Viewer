@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MD Trajectory Viewer — Expert Build (Auto-Fix Trajectories + Movie Export)</title>
-  <!-- Pin a known-stable NGL release -->
+  <title>MD Trajectory Viewer — 1XPW‑ready (final)</title>
+  <!-- Pin a stable NGL release -->
   <script src="https://unpkg.com/ngl@0.10.4/dist/ngl.js"></script>
   <style>
     :root { --bg:#0b1021; --panel:#12172b; --ink:#e8ebff; }
     html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial}
-    .layout{display:grid;grid-template-rows:auto auto 1fr;gap:10px;height:100%;}
+    .layout{display:grid;grid-template-rows:auto auto 1fr;gap:10px;height:100%}
     .bar{background:var(--panel);padding:10px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .bar input,.bar select,.bar button{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:var(--ink);border-radius:8px;padding:6px 10px}
     .bar button{cursor:pointer}
@@ -19,91 +19,70 @@
     .panel label{font-size:12px}
     #viewer{position:relative;margin:0 10px 10px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;overflow:hidden}
     #ngl{position:absolute;inset:0}
-    .log{position:absolute;right:14px;bottom:14px;z-index:6;width:480px;max-height:42vh;overflow:auto;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);font:12px/1.35 ui-monospace,monospace}
+    .log{position:absolute;right:14px;bottom:14px;z-index:6;width:520px;max-height:42vh;overflow:auto;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);font:12px/1.35 ui-monospace,monospace}
     .stretch{flex:1}
   </style>
 </head>
 <body>
-  <div class="layout">
-    <!-- Loader bar -->
-    <div class="bar">
-      <strong>MD Trajectory Viewer — Expert Build</strong>
-      <button id="btn-open" type="button">Open File…</button>
-      <label for="file" style="text-decoration:underline;cursor:pointer">Choose File</label>
-      <input id="file" type="file" accept=".pdb,.cif,.mmcif,.mmtf,.gro,.ent" style="display:none" />
-      <span>|</span>
-      <label>URL <input id="url" type="url" size="40" placeholder="https://…/traj.pdb (CORS required)"></label>
-      <button id="btn-load-url" type="button">Load URL</button>
-      <span class="stretch"></span>
-      <em style="font-size:12px;opacity:.9">Tip: Use multi-model PDB/mmCIF (MODEL/ENDMDL) or topology + XTC/TRR/DCD</em>
+<div class="layout">
+  <div class="bar">
+    <strong>MD Trajectory Viewer — 1XPW‑ready</strong>
+    <button id="btn-open" type="button">Open File…</button>
+    <label for="file" style="text-decoration:underline;cursor:pointer">Choose File</label>
+    <input id="file" type="file" accept=".pdb,.cif,.mmcif,.mmtf,.gro,.ent" style="display:none" />
+    <span>|</span>
+    <label>URL <input id="url" type="url" size="40" placeholder="https://…/multi-model.pdb (CORS)" /></label>
+    <button id="btn-load-url" type="button">Load URL</button>
+    <span class="stretch"></span>
+    <em style="font-size:12px;opacity:.9">Tip: Multi‑model PDB/mmCIF (MODEL/ENDMDL) or topology + XTC/TRR/DCD</em>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <h3>Playback</h3>
+      <label>Interpolation
+        <select id="interp">
+          <option value="none">none</option>
+          <option value="linear">linear</option>
+          <option value="spline" selected>spline</option>
+        </select>
+      </label>
+      <label>Speed <input type="range" id="speed" min="0" max="100" value="50" /></label>
+      <label>Frame <input type="range" id="frame" min="0" max="0" value="0" /></label>
+      <span id="frameInfo" style="font-size:12px">0 / 0</span>
+      <button id="btn-play" type="button">Play</button>
+      <button id="btn-pause" type="button">Pause</button>
+      <span id="status" style="font-size:12px;opacity:.9"></span>
     </div>
-
-    <!-- Controls -->
-    <div class="panels">
-      <div class="panel" id="panel-play">
-        <h3>Playback</h3>
-        <label>Interpolation
-          <select id="interp">
-            <option value="none">none</option>
-            <option value="linear">linear</option>
-            <option value="spline" selected>spline</option>
-          </select>
-        </label>
-        <label>Speed <input type="range" id="speed" min="0" max="100" value="60"></label>
-        <label>Frame <input type="range" id="frame" min="0" max="0" value="0"></label>
-        <span id="frameInfo" style="font-size:12px">0 / 0</span>
-        <button id="btn-play" type="button">Play</button>
-        <button id="btn-pause" type="button">Pause</button>
-        <span id="status" style="font-size:12px;opacity:.9"></span>
-      </div>
-
-      <div class="panel" id="panel-rec">
-        <h3>Movie Export</h3>
-        <label>FPS
-          <select id="rec-fps">
-            <option>24</option>
-            <option selected>30</option>
-            <option>60</option>
-          </select>
-        </label>
-        <label>Quality (kbps)
-          <select id="rec-kbps">
-            <option>3000</option>
-            <option selected>6000</option>
-            <option>12000</option>
-          </select>
-        </label>
-        <label>Filename <input id="rec-name" value="trajectory.webm" size="18"></label>
-        <button id="btn-rec-start" type="button">Start Recording</button>
-        <button id="btn-rec-stop" type="button" disabled>Stop</button>
-        <a id="rec-download" style="display:none;text-decoration:underline;">Download</a>
-      </div>
-    </div>
-
-    <!-- Viewer -->
-    <div id="viewer" style="height:100%">
-      <div id="ngl"></div>
-      <div class="log" id="log"></div>
+    <div class="panel">
+      <h3>Movie Export</h3>
+      <label>FPS
+        <select id="rec-fps"><option>24</option><option selected>30</option><option>60</option></select>
+      </label>
+      <label>Quality (kbps)
+        <select id="rec-kbps"><option>3000</option><option selected>6000</option><option>12000</option></select>
+      </label>
+      <label>Filename <input id="rec-name" value="trajectory.webm" size="18" /></label>
+      <button id="btn-rec-start" type="button">Start Recording</button>
+      <button id="btn-rec-stop" type="button" disabled>Stop</button>
+      <a id="rec-download" style="display:none;text-decoration:underline;">Download</a>
     </div>
   </div>
+
+  <div id="viewer" style="height:100%">
+    <div id="ngl"></div>
+    <div class="log" id="log"></div>
+  </div>
+</div>
 
 <script>
 (function(){
   const log = document.getElementById('log');
   const L = (...a)=>{const s=a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' '); log.innerHTML = '<div>'+s+'</div>'+log.innerHTML; console.log(...a);};
 
-  // ---------- NGL Stage ----------
-  const stage = new NGL.Stage('ngl', {backgroundColor:'#0b1021'});
-  window.addEventListener('resize', ()=>{stage.handleResize();});
-
-  // State
-  let comp = null;      // StructureComponent
-  let rep = null;       // Representation (selection-based fallback)
-  let traj = null;      // Trajectory (if available)
-  let nFrames = 0;      // number of frames
-  let cur = 0;          // current frame (0-based)
-  let playing = false;  // manual player state
-  let timer = null;     // manual timer
+  // Stage
+  const stage = new NGL.Stage('ngl', { backgroundColor:'#0b1021' });
+  window.addEventListener('resize', ()=>stage.handleResize());
 
   // Elements
   const btnOpen = document.getElementById('btn-open');
@@ -117,7 +96,6 @@
   const btnPlay = document.getElementById('btn-play');
   const btnPause = document.getElementById('btn-pause');
   const status = document.getElementById('status');
-
   const recFps = document.getElementById('rec-fps');
   const recKbps = document.getElementById('rec-kbps');
   const recName = document.getElementById('rec-name');
@@ -125,199 +103,127 @@
   const btnRecStop = document.getElementById('btn-rec-stop');
   const recDownload = document.getElementById('rec-download');
 
-  // ---------- Helpers ----------
-  // PDB auto-fixers (wrap concatenated frames with MODEL/ENDMDL)
-  async function readText(source){
-    if (source instanceof File || source instanceof Blob) return await source.text();
-    if (typeof source === 'string') { try { const r = await fetch(source,{mode:'cors'}); return await r.text(); } catch(_) { return null; } }
-    return null;
-  }
-  function analyzePDBText(text){
-    const lines = text.split(/\r?\n/);
-    let modelCount = 0, endmdlCount = 0; let atomsInCurrent = 0; const atomsPerModel = [];
-    let inModel = false; let totalAtom = 0;
-    for (const ln of lines){
-      if (ln.startsWith('MODEL')) { inModel = true; modelCount++; atomsInCurrent = 0; }
-      else if (ln.startsWith('ENDMDL')) { inModel = false; endmdlCount++; atomsPerModel.push(atomsInCurrent); }
-      else if (ln.startsWith('ATOM') || ln.startsWith('HETATM')) { totalAtom++; if (inModel) atomsInCurrent++; }
-    }
-    let inferred = null;
-    if (modelCount === 0 && totalAtom > 0){
-      const atomLines = lines.filter(ln => ln.startsWith('ATOM') || ln.startsWith('HETATM'));
-      const serials = atomLines.map(ln => parseInt(ln.substr(6,5))||NaN);
-      const starts = [];
-      for (let i=0;i<atomLines.length;i++){ if (serials[i]===1) starts.push(i); }
-      let guess = 0;
-      if (starts.length>=2) guess = starts[1]-starts[0];
-      if (!guess || guess<=0){
-        const N = atomLines.length; const divisors=[]; for (let k=1;k<=Math.min(50000,N);k++){ if (N%k===0) divisors.push(k); }
-        divisors.sort((a,b)=>a-b);
-        guess = divisors.find(d => d>=50 && (N/d)<=5000) || 0;
-      }
-      if (guess && atomLines.length % guess === 0){ inferred = { atomsPerFrame: guess, frames: atomLines.length/guess }; }
-    }
-    return { modelCount, endmdlCount, atomsPerModel, inferred };
-  }
-  function rebuildMultiModelPDB(text, atomsPerFrame){
-    const lines = text split(/\r?\n/); // <-- will be corrected below
-  }
-  // (Correct the accidental space introduced by some editors)
-  function rebuildMultiModelPDB(text, atomsPerFrame){
-    const lines = text.split(/\r?\n/);
-    const header = lines.filter(ln => /^(HEADER|TITLE|REMARK|CRYST1|SCALE|ORIGX|SCALE|REMARK\s\d+)/.test(ln));
-    const atomLines = lines.filter(ln => ln.startsWith('ATOM') || ln.startsWith('HETATM'));
-    const nFrames = Math.floor(atomLines.length / atomsPerFrame);
-    let out = [];
-    out.push(...header);
-    for (let f=0; f<nFrames; f++){
-      out.push(('MODEL    ' + String(f+1)).padEnd(80));
-      const start = f*atomsPerFrame, end = start + atomsPerFrame;
-      for (let i=start;i<end;i++) out.push(atomLines[i]);
-      out.push('ENDMDL'.padEnd(80));
-    }
-    out.push('END'.padEnd(80));
-    return out.join('\n');
-  }
+  // State
+  let comp = null;   // StructureComponent
+  let rep = null;    // Representation for selection fallback
+  let traj = null;   // Trajectory (if available)
+  let nFrames = 0;   // total frames
+  let cur = 0;       // current frame (0-based)
+  let playing = false, timer = null;
 
-  function shouldAsTrajectory(name){
-    const ext = (name||'').split('.').pop().toLowerCase();
-    return ['pdb','ent','cif','mmcif','mmtf','gro'].includes(ext);
-  }
+  function updateStatus(t){ status.textContent = t; }
+  function msPerFrame(){ const t = parseInt(speed.value,10)/100; return Math.round(30 + (1-t)*220); }
   function detectFrames(){
     if (traj && Number.isFinite(traj.frameCount)) return traj.frameCount|0;
     try { if (comp && comp.maxFrame != null) return (comp.maxFrame|0)+1; } catch(_){ }
     try { const f = comp?.structure?.frames; if (Array.isArray(f)) return f.length|0; } catch(_){ }
     return 1;
   }
-  function msPerFrame(){ const t = parseInt(speed.value,10)/100; return Math.round(30 + (1-t)*220); }
-  function updateStatus(txt){ status.textContent = txt; }
 
-  // Show a specific frame (native preferred; selection fallback is guaranteed)
+  // ---- Frame display (native preferred; guaranteed fallback) ----
   function showFrame(i){
     if (!comp) return;
-    nFrames = detectFrames();
-    cur = i % Math.max(1, nFrames);
-    const modelIndex1 = cur + 1; // 1-based for selection
+    nFrames = detectFrames(); if (nFrames < 1) nFrames = 1;
+    cur = ((i%nFrames)+nFrames)%nFrames;
+    const modelIdx1 = cur + 1; // selection uses 1-based index
 
     let used = false;
-    if (traj && typeof traj.setFrame === 'function') {
-      try { traj.setFrame(cur); used = true; } catch(_){ used = false; }
+    if (traj && typeof traj.setFrame === 'function'){
+      try { traj.setFrame(cur); used = true; } catch(e){ used = false; }
     }
-    if (!used) {
+    if (!used){
       try {
-        if (rep) {
-          rep.setParameters({ sele: `model ${modelIndex1}` });
-        } else {
-          comp.removeAllRepresentations();
-          rep = comp.addRepresentation('cartoon', { colorScheme:'chainname', sele: `model ${modelIndex1}` });
-        }
-      } catch(e) { /* ignore */ }
+        if (!rep) rep = comp.addRepresentation('cartoon', { colorScheme:'chainname' });
+        rep.setParameters({ sele: `model ${modelIdx1}` });
+      } catch(e){ L('Selection fallback error:', e.message||e); }
     }
-    try { comp.updateRepresentations({ what: { position: true } }); } catch(_){ }
+    try { comp.updateRepresentations({ what:{ position:true } }); } catch(_){ }
     try { stage.viewer.requestRender(); } catch(_){ }
-    frame.value = cur; frameInfo.textContent = `${cur} / ${Math.max(0, nFrames-1)}`;
+    frame.value = cur; frameInfo.textContent = `${cur} / ${Math.max(0,nFrames-1)}`;
+  }
+
+  function bindTrajSignals(){
+    if (!traj || !traj.signals || !traj.signals.frameChanged) return;
+    try {
+      traj.signals.frameChanged.add(()=>{ try { comp.updateRepresentations({ what:{ position:true }}); stage.viewer.requestRender(); } catch(_){ } });
+    } catch(_){ }
+  }
+
+  function applyInterpolation(){
+    if (!traj) return; const mode = interpSel.value;
+    if (typeof traj.setFrameInterpolation === 'function'){
+      try { traj.setFrameInterpolation(mode); L('Interpolation:', mode); } catch(_){ }
+    }
+  }
+
+  // ---- Loaders ----
+  function shouldAsTrajectory(name){
+    const ext = (name||'').split('.').pop().toLowerCase();
+    return ['pdb','ent','cif','mmcif','mmtf','gro'].includes(ext);
   }
 
   async function loadSource(source, nameHint){
     try{
       if (comp) stage.removeComponent(comp);
-      comp=null; rep=null; traj=null; nFrames=0; cur=0; stopManual();
+      comp = null; rep = null; traj = null; nFrames = 0; cur = 0; stopManual();
 
       const isFile = (source instanceof File) || (source instanceof Blob);
-      const name = nameHint || (isFile ? source.name : (typeof source==='string'?source:''));
-
-      // PDB auto-fix (adds MODEL/ENDMDL if frames are inferred)
-      let srcToLoad = source; let fixedNote = '';
-      const isPdbLike = /\.(pdb|ent)$/i.test(name) || (typeof source==='string' && /\.pdb($|\?|#)|\.ent($|\?|#)/i.test(source));
-      if (isPdbLike){
-        const txt = await readText(source);
-        if (txt){
-          const info = analyzePDBText(txt);
-          const hasModels = info.modelCount>0 && info.modelCount===info.endmdlCount;
-          const uniform = info.atomsPerModel.length>0 && info.atomsPerModel.every(x=>x===info.atomsPerModel[0]);
-          if (!hasModels && info.inferred && info.inferred.frames>1){
-            const wrapped = rebuildMultiModelPDB(txt, info.inferred.atomsPerFrame);
-            srcToLoad = new Blob([wrapped], {type:'chemical/x-pdb'});
-            fixedNote = `Auto-fixed: inserted MODEL/ENDMDL for ${info.inferred.frames} frames (atoms/frame=${info.inferred.atomsPerFrame}).`;
-            L(fixedNote);
-          } else if (hasModels && !uniform) {
-            L('Warning: MODELs present but atom counts vary per frame — animation may fail.');
-          }
-        }
-      }
+      const name = nameHint || (isFile ? source.name : (typeof source==='string' ? source : ''));
+      updateStatus('Loading: ' + (name || 'source'));
 
       const opts1 = {};
-      if (shouldAsTrajectory(name) || typeof source==='string') opts1.asTrajectory = true;
+      if (shouldAsTrajectory(name) || typeof source==='string') opts1.asTrajectory = true; // IMPORTANT
 
-      L('Loading (prefer asTrajectory):', name, fixedNote||'');
-      try { comp = await stage.loadFile(srcToLoad, opts1); }
-      catch(e1){
-        L('Retry without asTrajectory:', e1.message||e1);
-        const opts2 = {}; comp = await stage.loadFile(srcToLoad, opts2);
-      }
+      try { comp = await stage.loadFile(source, opts1); }
+      catch(e1){ L('Retry without asTrajectory:', e1.message||e1); comp = await stage.loadFile(source, {}); }
 
+      // Representation
       rep = comp.addRepresentation('cartoon', { colorScheme:'chainname' });
       comp.autoView();
 
-      const list = comp.trajectoryList||[]; traj = list.length? list[0] : null;
+      // Trajectory
+      const list = comp.trajectoryList || [];
+      traj = list.length ? list[0] : null;
+      if (traj) L('Trajectory detected. frameCount =', traj.frameCount);
+      else L('No trajectory object; will use selection fallback on models');
+
       nFrames = detectFrames();
-      frame.max = Math.max(0, nFrames-1); frame.value = 0; frameInfo.textContent = `0 / ${Math.max(0, nFrames-1)}`;
+      frame.max = Math.max(0, nFrames-1); frame.value = 0; frameInfo.textContent = `0 / ${Math.max(0,nFrames-1)}`;
 
       applyInterpolation();
       bindTrajSignals();
-
       showFrame(0);
-      updateStatus((fixedNote? fixedNote+' — ' : '') + (nFrames>1? `Ready: ${nFrames} frames` : 'Single-frame structure'));
+      updateStatus(nFrames>1 ? `Ready: ${nFrames} frames` : 'Single-frame structure');
     }catch(e){
-      L('Load error:', e.message||e); alert('Load failed: '+(e.message||e));
+      L('Load error:', e.message||e); alert('Load failed: ' + (e.message||e));
     }
   }
 
-  function bindTrajSignals(){
-    if (!traj || !traj.signals || !traj.signals.frameChanged) return;
-    try { traj.signals.frameChanged.add(()=>{ try { comp.updateRepresentations({ what: { position: true } }); stage.viewer.requestRender(); } catch(_){} }); } catch(_){ }
-  }
-
-  function applyInterpolation(){
-    if (!traj) return;
-    const mode = interpSel.value; // 'none' | 'linear' | 'spline'
-    if (typeof traj.setFrameInterpolation === 'function') {
-      try { traj.setFrameInterpolation(mode); L('Interpolation:', mode); } catch(_){ L('Interpolation not applied'); }
-    }
-  }
-
-  function msPerFrame(){ const t = parseInt(speed.value,10)/100; return Math.round(30 + (1-t)*220); }
+  // ---- Playback ----
+  function pauseAll(){ if (traj && traj.player && typeof traj.player.pause==='function'){ try{ traj.player.pause(); }catch(_){} } stopManual(); updateStatus('Paused'); }
+  function stopManual(){ playing=false; if (timer){ clearTimeout(timer); timer=null; } }
   function playNative(){
     if (traj && traj.player && typeof traj.player.play==='function'){
-      try {
-        traj.player.timeout = msPerFrame();
-        traj.player.play();
-        updateStatus('Playing (native TrajectoryPlayer)');
-        return true;
-      } catch(_){ }
+      try { traj.player.timeout = msPerFrame(); traj.player.play(); updateStatus('Playing (native)'); return true; } catch(_){ }
     }
     return false;
   }
   function playManual(){
-    if (playing || nFrames<=1) return;
-    playing = true; updateStatus('Playing (compatibility: selection per frame)');
-    (function step(){
-      if (!playing) return;
-      showFrame((cur+1)%nFrames);
-      timer = setTimeout(step, msPerFrame());
-    })();
-  }
-  function stopManual(){ playing=false; if (timer){ clearTimeout(timer); timer=null; } }
-  function pauseAll(){
-    if (traj && traj.player && typeof traj.player.pause==='function') try{ traj.player.pause(); }catch(_){ }
-    stopManual(); updateStatus('Paused');
+    if (playing || nFrames<=1) return; playing = true; updateStatus('Playing (selection fallback)');
+    (function step(){ if (!playing) return; showFrame((cur+1)%nFrames); timer = setTimeout(step, msPerFrame()); })();
   }
 
-  // ---------- Wire Playback Controls ----------
+  // ---- Wire UI ----
   btnOpen.addEventListener('click', ()=> file.click());
   document.querySelector('label[for="file"]').addEventListener('click', ()=> file.click());
-  file.addEventListener('change', e=>{ const f=e.target.files&&e.target.files[0]; if (f) loadSource(f); e.target.value=''; });
-  btnLoadUrl.addEventListener('click', ()=>{ const u=url.value.trim(); if (u) loadSource(u,u); else alert('Enter a URL'); });
+  file.addEventListener('change', e=>{
+    const f = e.target.files && e.target.files[0];
+    if (!f) { updateStatus('No file selected'); return; }
+    L('File selected:', f.name, f.size+' bytes');
+    loadSource(f);
+    e.target.value = ''; // allow re-selecting the same file
+  });
+  btnLoadUrl.addEventListener('click', ()=>{ const u = url.value.trim(); if (!u){ alert('Enter a URL'); return; } loadSource(u,u); });
 
   interpSel.addEventListener('change', applyInterpolation);
   speed.addEventListener('input', ()=>{ if (traj && traj.player) traj.player.timeout = msPerFrame(); });
@@ -325,34 +231,21 @@
   btnPlay.addEventListener('click', ()=>{ if (!nFrames||nFrames===1){ updateStatus('No trajectory detected'); return; } if (!playNative()) playManual(); });
   btnPause.addEventListener('click', pauseAll);
 
-  // ---------- Recording ----------
+  // ---- Recording ----
   const rec = { mr:null, chunks:[] };
   function nglCanvas(){ return stage.viewer.renderer.domElement; }
-
   btnRecStart.addEventListener('click', ()=>{
     try{
-      const fps = parseInt(recFps.value,10)||30;
-      const kbps = parseInt(recKbps.value,10)||6000;
-      const canvas = nglCanvas();
-      const stream = canvas.captureStream(fps);
+      const fps = parseInt(recFps.value,10)||30; const kbps = parseInt(recKbps.value,10)||6000;
+      const stream = nglCanvas().captureStream(fps);
       const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm;codecs=vp8';
-      rec.chunks = [];
-      rec.mr = new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond: kbps*1000 });
+      rec.chunks = []; rec.mr = new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond: kbps*1000 });
       rec.mr.ondataavailable = e=>{ if (e.data && e.data.size) rec.chunks.push(e.data); };
-      rec.mr.onstop = ()=>{
-        const blob = new Blob(rec.chunks, { type: rec.mr.mimeType || 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        recDownload.href = url; recDownload.download = (recName.value||'trajectory.webm');
-        recDownload.style.display = 'inline'; recDownload.textContent = 'Download';
-        btnRecStop.disabled = true; btnRecStart.disabled = false;
-      };
+      rec.mr.onstop = ()=>{ const blob = new Blob(rec.chunks, { type: rec.mr.mimeType||'video/webm' }); const url = URL.createObjectURL(blob); recDownload.href=url; recDownload.download=(recName.value||'trajectory.webm'); recDownload.style.display='inline'; recDownload.textContent='Download'; btnRecStop.disabled=true; btnRecStart.disabled=false; };
       rec.mr.start(); recDownload.style.display='none'; btnRecStart.disabled=true; btnRecStop.disabled=false;
     }catch(e){ alert('Recording failed: '+(e.message||e)); }
   });
   btnRecStop.addEventListener('click', ()=>{ try{ if (rec.mr && rec.mr.state!=='inactive') rec.mr.stop(); }catch(_){ } });
-
-  // ---------- Initial sanity load ----------
-  (async()=>{ try{ await loadSource('rcsb://1crn','1crn'); }catch(_){} })();
 })();
 </script>
 </body>
