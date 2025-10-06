@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MD Trajectory Viewer — Expert Build (Auto‑Fix Trajectories + Movie Export)</title>
-  <!-- NGL (robust local uploads + true trajectory mode + interpolation) -->
-  <script src="https://unpkg.com/ngl@latest/dist/ngl.js"></script>
+  <!-- Pin a known-stable NGL release -->
+  <script src="https://unpkg.com/ngl@0.10.4/dist/ngl.js"></script>
   <style>
     :root { --bg:#0b1021; --panel:#12172b; --ink:#e8ebff; }
     html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial}
@@ -19,10 +19,8 @@
     .panel label{font-size:12px}
     #viewer{position:relative;margin:0 10px 10px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;overflow:hidden}
     #ngl{position:absolute;inset:0}
-    .log{position:absolute;right:14px;bottom:14px;z-index:6;width:460px;max-height:42vh;overflow:auto;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);font:12px/1.35 ui-monospace,monospace}
+    .log{position:absolute;right:14px;bottom:14px;z-index:6;width:480px;max-height:42vh;overflow:auto;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);font:12px/1.35 ui-monospace,monospace}
     .stretch{flex:1}
-    .warn{color:#ffd58a}
-    .ok{color:#8affb3}
   </style>
 </head>
 <body>
@@ -37,7 +35,7 @@
       <label>URL <input id="url" type="url" size="40" placeholder="https://…/traj.pdb (CORS required)"></label>
       <button id="btn-load-url" type="button">Load URL</button>
       <span class="stretch"></span>
-      <em style="font-size:12px;opacity:.9">Tip: Use multi-model PDB/mmCIF (MODEL/ENDMDL) or topology+XTC for web playback</em>
+      <em style="font-size:12px;opacity:.9">Tip: Use multi-model PDB/mmCIF (MODEL/ENDMDL) or topology+XTC/TRR/DCD</em>
     </div>
 
     <!-- Controls: separated -->
@@ -130,23 +128,10 @@
   const recDownload = document.getElementById('rec-download');
 
   // ---------- Helpers ----------
-  function shouldAsTrajectory(name){
-    const ext = (name||'').split('.').pop().toLowerCase();
-    return ['pdb','ent','cif','mmcif','mmtf','gro'].includes(ext);
-  }
-  function detectFrames(){
-    if (traj && Number.isFinite(traj.frameCount)) return traj.frameCount|0;
-    try { if (comp && comp.maxFrame != null) return (comp.maxFrame|0)+1; } catch(_){ }
-    try { const f = comp?.structure?.frames; if (Array.isArray(f)) return f.length|0; } catch(_){ }
-    return 1;
-  }
-  function msPerFrame(){ const t = parseInt(speed.value,10)/100; return Math.round(30 + (1-t)*220); }
-  function updateStatus(txt){ status.textContent = txt; }
-
-  // ---- Data Validators & Auto-Fixers ----
+  // PDB auto-fix helpers to guarantee visible trajectory frames
   async function readText(source){
     if (source instanceof File || source instanceof Blob) return await source.text();
-    if (typeof source === 'string') { try { const r = await fetch(source); return await r.text(); } catch(_) { return null; } }
+    if (typeof source === 'string') { try { const r = await fetch(source,{mode:'cors'}); return await r.text(); } catch(_) { return null; } }
     return null;
   }
   function analyzePDBText(text){
@@ -158,25 +143,20 @@
       else if (ln.startsWith('ENDMDL')) { inModel = false; endmdlCount++; atomsPerModel.push(atomsInCurrent); }
       else if (ln.startsWith('ATOM') || ln.startsWith('HETATM')) { totalAtom++; if (inModel) atomsInCurrent++; }
     }
-    // Heuristic: If no MODEL/ENDMDL but ATOM lines exist, try to infer constant-sized frames by grouping
     let inferred = null;
     if (modelCount === 0 && totalAtom > 0){
       const atomLines = lines.filter(ln => ln.startsWith('ATOM') || ln.startsWith('HETATM'));
-      // Guess atoms per frame via distance between serial numbers resetting to 1
       const serials = atomLines.map(ln => parseInt(ln.substr(6,5))||NaN);
-      const firstSerialIdxs = [];
-      for (let i=0;i<atomLines.length;i++){ if (serials[i]===1) firstSerialIdxs.push(i); }
+      const starts = [];
+      for (let i=0;i<atomLines.length;i++){ if (serials[i]===1) starts.push(i); }
       let guess = 0;
-      if (firstSerialIdxs.length>=2){ guess = firstSerialIdxs[1]-firstSerialIdxs[0]; }
+      if (starts.length>=2) guess = starts[1]-starts[0];
       if (!guess || guess<=0){
-        // fallback: choose a divisor of atomLines.length in [50, 200000]
         const N = atomLines.length; const divisors=[]; for (let k=1;k<=Math.min(50000,N);k++){ if (N%k===0) divisors.push(k); }
         divisors.sort((a,b)=>a-b);
         guess = divisors.find(d => d>=50 && (N/d)<=5000) || 0;
       }
-      if (guess && atomLines.length % guess === 0){
-        inferred = { atomsPerFrame: guess, frames: atomLines.length/guess };
-      }
+      if (guess && atomLines.length % guess === 0){ inferred = { atomsPerFrame: guess, frames: atomLines.length/guess }; }
     }
     return { modelCount, endmdlCount, atomsPerModel, inferred };
   }
@@ -197,12 +177,25 @@
     return out.join('\n');
   }
 
+  function shouldAsTrajectory(name){
+    const ext = (name||'').split('.').pop().toLowerCase();
+    return ['pdb','ent','cif','mmcif','mmtf','gro'].includes(ext);
+  }
+  function detectFrames(){
+    if (traj && Number.isFinite(traj.frameCount)) return traj.frameCount|0;
+    try { if (comp && comp.maxFrame != null) return (comp.maxFrame|0)+1; } catch(_){ }
+    try { const f = comp?.structure?.frames; if (Array.isArray(f)) return f.length|0; } catch(_){ }
+    return 1;
+  }
+  function msPerFrame(){ const t = parseInt(speed.value,10)/100; return Math.round(30 + (1-t)*220); }
+  function updateStatus(txt){ status.textContent = txt; }
+
   // Show a specific frame reliably (native trajectory preferred; selection fallback guaranteed)
   function showFrame(i){
     if (!comp) return;
     nFrames = detectFrames();
     cur = i % Math.max(1, nFrames);
-    const modelIndex1 = cur + 1; // NGL selection uses 1-based model indices
+    const modelIndex1 = cur + 1; // 1-based for selection
 
     let used = false;
     if (traj && typeof traj.setFrame === 'function') {
@@ -231,7 +224,7 @@
       const isFile = (source instanceof File) || (source instanceof Blob);
       const name = nameHint || (isFile ? source.name : (typeof source==='string'?source:''));
 
-      // Pre-validate PDB; auto-fix if needed
+      // PDB auto-fix (adds MODEL/ENDMDL if frames are inferred)
       let srcToLoad = source; let fixedNote = '';
       const isPdbLike = /\.(pdb|ent)$/i.test(name) || (typeof source==='string' && /\.pdb($|\?|#)|\.ent($|\?|#)/i.test(source));
       if (isPdbLike){
