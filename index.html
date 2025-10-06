@@ -1,251 +1,151 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MD Trajectory Viewer — 1XPW‑ready (final)</title>
-  <!-- Pin a stable NGL release -->
-  <script src="https://unpkg.com/ngl@0.10.4/dist/ngl.js"></script>
-  <style>
-    :root { --bg:#0b1021; --panel:#12172b; --ink:#e8ebff; }
-    html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial}
-    .layout{display:grid;grid-template-rows:auto auto 1fr;gap:10px;height:100%}
-    .bar{background:var(--panel);padding:10px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .bar input,.bar select,.bar button{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:var(--ink);border-radius:8px;padding:6px 10px}
-    .bar button{cursor:pointer}
-    .panels{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 10px}
-    .panel{background:rgba(18,23,43,.9);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
-    .panel h3{margin:0 10px 0 0;font-size:14px}
-    .panel label{font-size:12px}
-    #viewer{position:relative;margin:0 10px 10px 10px;border:1px solid rgba(255,255,255,.12);border-radius:12px;overflow:hidden}
-    #ngl{position:absolute;inset:0}
-    .log{position:absolute;right:14px;bottom:14px;z-index:6;width:520px;max-height:42vh;overflow:auto;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.15);font:12px/1.35 ui-monospace,monospace}
-    .stretch{flex:1}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>NGL Minimal Trajectory Player (Native + Fallback)</title>
+<script src="https://unpkg.com/ngl@0.10.4/dist/ngl.js"></script>
+<style>
+  body{margin:0;background:#0b1021;color:#e8ebff;font:14px/1.4 system-ui,Segoe UI,Roboto,Arial}
+  .bar{display:flex;gap:10px;align-items:center;padding:10px;background:#12172b;border-bottom:1px solid rgba(255,255,255,.12)}
+  .bar input,.bar button{background:rgba(255,255,255,.08);color:#e8ebff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px 10px}
+  #stage{position:fixed;inset:50px 0 0 0}
+  #log{position:fixed;left:10px;top:50px;width:460px;max-height:40vh;overflow:auto;background:rgba(0,0,0,.5);padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.15)}
+  .row{display:flex;gap:8px;align-items:center}
+</style>
 </head>
 <body>
-<div class="layout">
-  <div class="bar">
-    <strong>MD Trajectory Viewer — 1XPW‑ready</strong>
-    <button id="btn-open" type="button">Open File…</button>
-    <label for="file" style="text-decoration:underline;cursor:pointer">Choose File</label>
-    <input id="file" type="file" accept=".pdb,.cif,.mmcif,.mmtf,.gro,.ent" style="display:none" />
-    <span>|</span>
-    <label>URL <input id="url" type="url" size="40" placeholder="https://…/multi-model.pdb (CORS)" /></label>
-    <button id="btn-load-url" type="button">Load URL</button>
-    <span class="stretch"></span>
-    <em style="font-size:12px;opacity:.9">Tip: Multi‑model PDB/mmCIF (MODEL/ENDMDL) or topology + XTC/TRR/DCD</em>
+<div class="bar">
+  <button id="open">Open File…</button>
+  <input id="file" type="file" accept=".pdb,.cif,.mmcif,.mmtf,.gro,.ent" style="display:none" />
+  <div class="row">
+    <label>Frame <input id="frame" type="range" min="0" max="0" value="0"></label>
+    <span id="fi">0/0</span>
   </div>
-
-  <div class="panels">
-    <div class="panel">
-      <h3>Playback</h3>
-      <label>Interpolation
-        <select id="interp">
-          <option value="none">none</option>
-          <option value="linear">linear</option>
-          <option value="spline" selected>spline</option>
-        </select>
-      </label>
-      <label>Speed <input type="range" id="speed" min="0" max="100" value="50" /></label>
-      <label>Frame <input type="range" id="frame" min="0" max="0" value="0" /></label>
-      <span id="frameInfo" style="font-size:12px">0 / 0</span>
-      <button id="btn-play" type="button">Play</button>
-      <button id="btn-pause" type="button">Pause</button>
-      <span id="status" style="font-size:12px;opacity:.9"></span>
-    </div>
-    <div class="panel">
-      <h3>Movie Export</h3>
-      <label>FPS
-        <select id="rec-fps"><option>24</option><option selected>30</option><option>60</option></select>
-      </label>
-      <label>Quality (kbps)
-        <select id="rec-kbps"><option>3000</option><option selected>6000</option><option>12000</option></select>
-      </label>
-      <label>Filename <input id="rec-name" value="trajectory.webm" size="18" /></label>
-      <button id="btn-rec-start" type="button">Start Recording</button>
-      <button id="btn-rec-stop" type="button" disabled>Stop</button>
-      <a id="rec-download" style="display:none;text-decoration:underline;">Download</a>
-    </div>
-  </div>
-
-  <div id="viewer" style="height:100%">
-    <div id="ngl"></div>
-    <div class="log" id="log"></div>
-  </div>
+  <button id="playNative">Play (native)</button>
+  <button id="playFallback">Play (fallback)</button>
+  <button id="pause">Pause</button>
+  <span id="status" style="margin-left:10px;opacity:.85"></span>
 </div>
+<div id="stage"></div>
+<div id="log"></div>
 
 <script>
 (function(){
   const log = document.getElementById('log');
   const L = (...a)=>{const s=a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' '); log.innerHTML = '<div>'+s+'</div>'+log.innerHTML; console.log(...a);};
 
-  // Stage
-  const stage = new NGL.Stage('ngl', { backgroundColor:'#0b1021' });
+  // NGL stage
+  const stage = new NGL.Stage('stage', { backgroundColor:'#0b1021' });
   window.addEventListener('resize', ()=>stage.handleResize());
 
-  // Elements
-  const btnOpen = document.getElementById('btn-open');
-  const file = document.getElementById('file');
-  const url = document.getElementById('url');
-  const btnLoadUrl = document.getElementById('btn-load-url');
-  const interpSel = document.getElementById('interp');
-  const speed = document.getElementById('speed');
+  // UI
+  const openBtn = document.getElementById('open');
+  const fileInp = document.getElementById('file');
   const frame = document.getElementById('frame');
-  const frameInfo = document.getElementById('frameInfo');
-  const btnPlay = document.getElementById('btn-play');
-  const btnPause = document.getElementById('btn-pause');
+  const fi = document.getElementById('fi');
   const status = document.getElementById('status');
-  const recFps = document.getElementById('rec-fps');
-  const recKbps = document.getElementById('rec-kbps');
-  const recName = document.getElementById('rec-name');
-  const btnRecStart = document.getElementById('btn-rec-start');
-  const btnRecStop = document.getElementById('btn-rec-stop');
-  const recDownload = document.getElementById('rec-download');
+  const playNativeBtn = document.getElementById('playNative');
+  const playFallbackBtn = document.getElementById('playFallback');
+  const pauseBtn = document.getElementById('pause');
 
   // State
-  let comp = null;   // StructureComponent
-  let rep = null;    // Representation for selection fallback
-  let traj = null;   // Trajectory (if available)
-  let nFrames = 0;   // total frames
-  let cur = 0;       // current frame (0-based)
-  let playing = false, timer = null;
+  let comp=null, rep=null, traj=null, nFrames=0, cur=0, playing=false, timer=null;
 
-  function updateStatus(t){ status.textContent = t; }
-  function msPerFrame(){ const t = parseInt(speed.value,10)/100; return Math.round(30 + (1-t)*220); }
+  function setStatus(t){ status.textContent = t; }
+  function msPerFrame(){ return 80; } // ~12.5 FPS; adjust as you wish
   function detectFrames(){
     if (traj && Number.isFinite(traj.frameCount)) return traj.frameCount|0;
-    try { if (comp && comp.maxFrame != null) return (comp.maxFrame|0)+1; } catch(_){ }
-    try { const f = comp?.structure?.frames; if (Array.isArray(f)) return f.length|0; } catch(_){ }
+    try{ if (comp && comp.maxFrame != null) return (comp.maxFrame|0)+1; }catch(_){}
+    try{ const f = comp?.structure?.frames; if (Array.isArray(f)) return f.length|0; }catch(_){}
     return 1;
   }
 
-  // ---- Frame display (native preferred; guaranteed fallback) ----
   function showFrame(i){
     if (!comp) return;
-    nFrames = detectFrames(); if (nFrames < 1) nFrames = 1;
+    nFrames = detectFrames(); if (nFrames<1) nFrames = 1;
     cur = ((i%nFrames)+nFrames)%nFrames;
-    const modelIdx1 = cur + 1; // selection uses 1-based index
+    const model1 = cur + 1;
 
     let used = false;
-    if (traj && typeof traj.setFrame === 'function'){
+    if (traj && typeof traj.setFrame === 'function') {
       try { traj.setFrame(cur); used = true; } catch(e){ used = false; }
     }
-    if (!used){
+    if (!used) {
       try {
         if (!rep) rep = comp.addRepresentation('cartoon', { colorScheme:'chainname' });
-        rep.setParameters({ sele: `model ${modelIdx1}` });
-      } catch(e){ L('Selection fallback error:', e.message||e); }
+        rep.setParameters({ sele: `model ${model1}` }); // guaranteed visual change
+      } catch(e){ L('Fallback error:', e.message||e); }
     }
-    try { comp.updateRepresentations({ what:{ position:true } }); } catch(_){ }
-    try { stage.viewer.requestRender(); } catch(_){ }
-    frame.value = cur; frameInfo.textContent = `${cur} / ${Math.max(0,nFrames-1)}`;
+    try { comp.updateRepresentations({ what:{ position:true } }); } catch(_){}
+    try { stage.viewer.requestRender(); } catch(_){}
+    frame.value = cur; fi.textContent = `${cur}/${Math.max(0, nFrames-1)}`;
   }
 
-  function bindTrajSignals(){
+  function bindSignals(){
     if (!traj || !traj.signals || !traj.signals.frameChanged) return;
     try {
-      traj.signals.frameChanged.add(()=>{ try { comp.updateRepresentations({ what:{ position:true }}); stage.viewer.requestRender(); } catch(_){ } });
-    } catch(_){ }
+      traj.signals.frameChanged.add(()=>{
+        try { comp.updateRepresentations({ what:{ position:true } }); stage.viewer.requestRender(); } catch(_){}
+      });
+    }catch(_){}
   }
 
-  function applyInterpolation(){
-    if (!traj) return; const mode = interpSel.value;
-    if (typeof traj.setFrameInterpolation === 'function'){
-      try { traj.setFrameInterpolation(mode); L('Interpolation:', mode); } catch(_){ }
-    }
-  }
-
-  // ---- Loaders ----
-  function shouldAsTrajectory(name){
-    const ext = (name||'').split('.').pop().toLowerCase();
-    return ['pdb','ent','cif','mmcif','mmtf','gro'].includes(ext);
-  }
-
-  async function loadSource(source, nameHint){
+  async function loadSource(src, nameHint){
     try{
       if (comp) stage.removeComponent(comp);
-      comp = null; rep = null; traj = null; nFrames = 0; cur = 0; stopManual();
+      comp=rep=traj=null; nFrames=cur=0; stopManual();
 
-      const isFile = (source instanceof File) || (source instanceof Blob);
-      const name = nameHint || (isFile ? source.name : (typeof source==='string' ? source : ''));
-      updateStatus('Loading: ' + (name || 'source'));
+      const name = nameHint || (src && src.name) || '';
+      setStatus('Loading: ' + (name||'file')); L('Loading with asTrajectory:true', name);
+      try { comp = await stage.loadFile(src, { asTrajectory:true }); }
+      catch(e1){ L('Retry without asTrajectory:', e1.message||e1); comp = await stage.loadFile(src, {}); }
 
-      const opts1 = {};
-      if (shouldAsTrajectory(name) || typeof source==='string') opts1.asTrajectory = true; // IMPORTANT
-
-      try { comp = await stage.loadFile(source, opts1); }
-      catch(e1){ L('Retry without asTrajectory:', e1.message||e1); comp = await stage.loadFile(source, {}); }
-
-      // Representation
       rep = comp.addRepresentation('cartoon', { colorScheme:'chainname' });
       comp.autoView();
 
-      // Trajectory
       const list = comp.trajectoryList || [];
       traj = list.length ? list[0] : null;
-      if (traj) L('Trajectory detected. frameCount =', traj.frameCount);
-      else L('No trajectory object; will use selection fallback on models');
+      if (traj) L('Trajectory detected. frameCount=', traj.frameCount);
+      else L('No traj object; will use selection fallback.');
 
-      nFrames = detectFrames();
-      frame.max = Math.max(0, nFrames-1); frame.value = 0; frameInfo.textContent = `0 / ${Math.max(0,nFrames-1)}`;
-
-      applyInterpolation();
-      bindTrajSignals();
+      nFrames = detectFrames(); frame.max = Math.max(0, nFrames-1); frame.value = 0; fi.textContent = `0/${Math.max(0,nFrames-1)}`;
+      bindSignals();
       showFrame(0);
-      updateStatus(nFrames>1 ? `Ready: ${nFrames} frames` : 'Single-frame structure');
+      setStatus(nFrames>1 ? `Ready: ${nFrames} frames` : 'Single-frame structure');
     }catch(e){
-      L('Load error:', e.message||e); alert('Load failed: ' + (e.message||e));
+      L('Load error:', e.message||e); alert('Load failed: '+(e.message||e));
     }
   }
 
-  // ---- Playback ----
-  function pauseAll(){ if (traj && traj.player && typeof traj.player.pause==='function'){ try{ traj.player.pause(); }catch(_){} } stopManual(); updateStatus('Paused'); }
   function stopManual(){ playing=false; if (timer){ clearTimeout(timer); timer=null; } }
   function playNative(){
     if (traj && traj.player && typeof traj.player.play==='function'){
-      try { traj.player.timeout = msPerFrame(); traj.player.play(); updateStatus('Playing (native)'); return true; } catch(_){ }
+      try { traj.player.timeout = msPerFrame(); traj.player.play(); setStatus('Playing (native)'); return true; } catch(_){}
     }
     return false;
   }
-  function playManual(){
-    if (playing || nFrames<=1) return; playing = true; updateStatus('Playing (selection fallback)');
+  function playFallback(){
+    if (playing || nFrames<=1) return;
+    playing = true; setStatus('Playing (fallback)');
     (function step(){ if (!playing) return; showFrame((cur+1)%nFrames); timer = setTimeout(step, msPerFrame()); })();
   }
+  function pauseAll(){ try{ if (traj && traj.player && traj.player.pause) traj.player.pause(); }catch(_){}
+    stopManual(); setStatus('Paused'); }
 
-  // ---- Wire UI ----
-  btnOpen.addEventListener('click', ()=> file.click());
-  document.querySelector('label[for="file"]').addEventListener('click', ()=> file.click());
-  file.addEventListener('change', e=>{
+  // Wire UI
+  openBtn.addEventListener('click', ()=>fileInp.click());
+  fileInp.addEventListener('change', e=>{
     const f = e.target.files && e.target.files[0];
-    if (!f) { updateStatus('No file selected'); return; }
+    if (!f){ setStatus('No file selected'); return; }
     L('File selected:', f.name, f.size+' bytes');
-    loadSource(f);
-    e.target.value = ''; // allow re-selecting the same file
+    loadSource(f, f.name);
+    e.target.value = ''; // allow same file re-select
   });
-  btnLoadUrl.addEventListener('click', ()=>{ const u = url.value.trim(); if (!u){ alert('Enter a URL'); return; } loadSource(u,u); });
-
-  interpSel.addEventListener('change', applyInterpolation);
-  speed.addEventListener('input', ()=>{ if (traj && traj.player) traj.player.timeout = msPerFrame(); });
-  frame.addEventListener('input', ()=>{ const f = parseInt(frame.value,10)|0; showFrame(f); });
-  btnPlay.addEventListener('click', ()=>{ if (!nFrames||nFrames===1){ updateStatus('No trajectory detected'); return; } if (!playNative()) playManual(); });
-  btnPause.addEventListener('click', pauseAll);
-
-  // ---- Recording ----
-  const rec = { mr:null, chunks:[] };
-  function nglCanvas(){ return stage.viewer.renderer.domElement; }
-  btnRecStart.addEventListener('click', ()=>{
-    try{
-      const fps = parseInt(recFps.value,10)||30; const kbps = parseInt(recKbps.value,10)||6000;
-      const stream = nglCanvas().captureStream(fps);
-      const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm;codecs=vp8';
-      rec.chunks = []; rec.mr = new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond: kbps*1000 });
-      rec.mr.ondataavailable = e=>{ if (e.data && e.data.size) rec.chunks.push(e.data); };
-      rec.mr.onstop = ()=>{ const blob = new Blob(rec.chunks, { type: rec.mr.mimeType||'video/webm' }); const url = URL.createObjectURL(blob); recDownload.href=url; recDownload.download=(recName.value||'trajectory.webm'); recDownload.style.display='inline'; recDownload.textContent='Download'; btnRecStop.disabled=true; btnRecStart.disabled=false; };
-      rec.mr.start(); recDownload.style.display='none'; btnRecStart.disabled=true; btnRecStop.disabled=false;
-    }catch(e){ alert('Recording failed: '+(e.message||e)); }
-  });
-  btnRecStop.addEventListener('click', ()=>{ try{ if (rec.mr && rec.mr.state!=='inactive') rec.mr.stop(); }catch(_){ } });
+  frame.addEventListener('input', ()=> showFrame(+frame.value));
+  playNativeBtn.addEventListener('click', ()=>{ if (!nFrames||nFrames===1){ setStatus('No trajectory detected'); return; } if (!playNative()) playFallback(); });
+  playFallbackBtn.addEventListener('click', ()=>{ if (!nFrames||nFrames===1){ setStatus('No trajectory detected'); return; } playFallback(); });
+  pauseBtn.addEventListener('click', pauseAll);
 })();
 </script>
 </body>
