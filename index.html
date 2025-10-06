@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>NGL Minimal Trajectory Player (Native + Fallback)</title>
+<title>NGL Minimal Trajectory Player (Component.setFrame fix)</title>
 <script src="https://unpkg.com/ngl@0.10.4/dist/ngl.js"></script>
 <style>
   body{margin:0;background:#0b1021;color:#e8ebff;font:14px/1.4 system-ui,Segoe UI,Roboto,Arial}
@@ -23,6 +23,7 @@
     <span id="fi">0/0</span>
   </div>
   <button id="playNative">Play (native)</button>
+  <button id="playComp">Play (component)</button>
   <button id="playFallback">Play (fallback)</button>
   <button id="pause">Pause</button>
   <span id="status" style="margin-left:10px;opacity:.85"></span>
@@ -35,25 +36,23 @@
   const log = document.getElementById('log');
   const L = (...a)=>{const s=a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' '); log.innerHTML = '<div>'+s+'</div>'+log.innerHTML; console.log(...a);};
 
-  // NGL stage
   const stage = new NGL.Stage('stage', { backgroundColor:'#0b1021' });
   window.addEventListener('resize', ()=>stage.handleResize());
 
-  // UI
   const openBtn = document.getElementById('open');
   const fileInp = document.getElementById('file');
   const frame = document.getElementById('frame');
   const fi = document.getElementById('fi');
   const status = document.getElementById('status');
   const playNativeBtn = document.getElementById('playNative');
+  const playCompBtn = document.getElementById('playComp');
   const playFallbackBtn = document.getElementById('playFallback');
   const pauseBtn = document.getElementById('pause');
 
-  // State
   let comp=null, rep=null, traj=null, nFrames=0, cur=0, playing=false, timer=null;
 
-  function setStatus(t){ status.textContent = t; }
-  function msPerFrame(){ return 80; } // ~12.5 FPS; adjust as you wish
+  const setStatus = t => status.textContent = t;
+  const msPerFrame = ()=>80; // adjust as desired
   function detectFrames(){
     if (traj && Number.isFinite(traj.frameCount)) return traj.frameCount|0;
     try{ if (comp && comp.maxFrame != null) return (comp.maxFrame|0)+1; }catch(_){}
@@ -67,19 +66,31 @@
     cur = ((i%nFrames)+nFrames)%nFrames;
     const model1 = cur + 1;
 
-    let used = false;
+    let path = 'none';
     if (traj && typeof traj.setFrame === 'function') {
-      try { traj.setFrame(cur); used = true; } catch(e){ used = false; }
+      try { traj.setFrame(cur); path = 'native: traj.setFrame'; }
+      catch(e){ path = 'nativeFailed'; }
     }
-    if (!used) {
+    // NEW: if no traj, drive the component frames directly
+    if (path === 'none' || path === 'nativeFailed') {
+      if (comp && typeof comp.setFrame === 'function') {
+        try { comp.setFrame(cur); path = 'component.setFrame'; }
+        catch(e){ path = 'componentFailed'; }
+      }
+    }
+    // Last-resort selection per model
+    if (path === 'componentFailed' || path === 'none' || path === 'nativeFailed') {
       try {
         if (!rep) rep = comp.addRepresentation('cartoon', { colorScheme:'chainname' });
-        rep.setParameters({ sele: `model ${model1}` }); // guaranteed visual change
+        rep.setParameters({ sele: `model ${model1}` });
+        path = 'fallback: sele "model N"';
       } catch(e){ L('Fallback error:', e.message||e); }
     }
+
     try { comp.updateRepresentations({ what:{ position:true } }); } catch(_){}
     try { stage.viewer.requestRender(); } catch(_){}
     frame.value = cur; fi.textContent = `${cur}/${Math.max(0, nFrames-1)}`;
+    setStatus(`Frame ${cur} via ${path}`);
   }
 
   function bindSignals(){
@@ -106,10 +117,11 @@
 
       const list = comp.trajectoryList || [];
       traj = list.length ? list[0] : null;
-      if (traj) L('Trajectory detected. frameCount=', traj.frameCount);
-      else L('No traj object; will use selection fallback.');
+      L(traj ? `Trajectory detected: frames=${traj.frameCount}` : 'No traj; will use component.setFrame / selection');
 
-      nFrames = detectFrames(); frame.max = Math.max(0, nFrames-1); frame.value = 0; fi.textContent = `0/${Math.max(0,nFrames-1)}`;
+      nFrames = detectFrames();
+      frame.max = Math.max(0, nFrames-1); frame.value = 0; fi.textContent = `0/${Math.max(0,nFrames-1)}`;
+
       bindSignals();
       showFrame(0);
       setStatus(nFrames>1 ? `Ready: ${nFrames} frames` : 'Single-frame structure');
@@ -119,32 +131,40 @@
   }
 
   function stopManual(){ playing=false; if (timer){ clearTimeout(timer); timer=null; } }
-  function playNative(){
-    if (traj && traj.player && typeof traj.player.play==='function'){
-      try { traj.player.timeout = msPerFrame(); traj.player.play(); setStatus('Playing (native)'); return true; } catch(_){}
-    }
-    return false;
-  }
-  function playFallback(){
+  function play(loopFn,label){
     if (playing || nFrames<=1) return;
-    playing = true; setStatus('Playing (fallback)');
+    playing = true; setStatus(`Playing (${label})`);
     (function step(){ if (!playing) return; showFrame((cur+1)%nFrames); timer = setTimeout(step, msPerFrame()); })();
   }
   function pauseAll(){ try{ if (traj && traj.player && traj.player.pause) traj.player.pause(); }catch(_){}
     stopManual(); setStatus('Paused'); }
 
-  // Wire UI
+  // UI
   openBtn.addEventListener('click', ()=>fileInp.click());
   fileInp.addEventListener('change', e=>{
     const f = e.target.files && e.target.files[0];
     if (!f){ setStatus('No file selected'); return; }
     L('File selected:', f.name, f.size+' bytes');
     loadSource(f, f.name);
-    e.target.value = ''; // allow same file re-select
+    e.target.value = '';
   });
   frame.addEventListener('input', ()=> showFrame(+frame.value));
-  playNativeBtn.addEventListener('click', ()=>{ if (!nFrames||nFrames===1){ setStatus('No trajectory detected'); return; } if (!playNative()) playFallback(); });
-  playFallbackBtn.addEventListener('click', ()=>{ if (!nFrames||nFrames===1){ setStatus('No trajectory detected'); return; } playFallback(); });
+  playNativeBtn.addEventListener('click', ()=>{
+    if (!nFrames||nFrames===1){ setStatus('No trajectory detected'); return; }
+    // prefer traj.player if available; otherwise fall back to component loop
+    if (traj && traj.player && typeof traj.player.play==='function'){
+      try { traj.player.timeout = msPerFrame(); traj.player.play(); setStatus('Playing (traj.player)'); return; } catch(_){}
+    }
+    play(showFrame,'component/traj-independent');
+  });
+  playCompBtn.addEventListener('click', ()=>{
+    if (!nFrames||nFrames===1){ setStatus('No trajectory detected'); return; }
+    play(showFrame,'component.setFrame');
+  });
+  playFallbackBtn.addEventListener('click', ()=>{
+    if (!nFrames||nFrames===1){ setStatus('No trajectory detected'); return; }
+    play(showFrame,'fallback selection');
+  });
   pauseBtn.addEventListener('click', pauseAll);
 })();
 </script>
